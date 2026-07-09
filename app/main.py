@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.core.logging import setup_logging, logger
 from app.api.health import router as health_router
 from app.api.chat import router as chat_router
+from app.api.health_models import router as health_models_router
 
 
 @asynccontextmanager
@@ -35,3 +36,4 @@ app.add_middleware(
 
 app.include_router(health_router, prefix=settings.api_prefix)
 app.include_router(chat_router, prefix=settings.api_prefix)
+app.include_router(health_models_router, prefix=settings.api_prefix)

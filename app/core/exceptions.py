@@ -28,3 +28,11 @@ class ModelError(NurofinError):
     def __init__(self, message: str, model: str | None = None) -> None:
         self.model = model
         super().__init__(message)
+
+
+class KnowledgeError(NurofinError):
+    """Raised when the knowledge pipeline encounters an error."""
+
+    def __init__(self, message: str, stage: str | None = None) -> None:
+        self.stage = stage
+        super().__init__(message)

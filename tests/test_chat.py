@@ -4,9 +4,13 @@ from app.core.dependencies import get_chat_router
 from app.router.chat import ChatRouter
 from app.services.chat import ChatService
 from app.agents.chat_agent import ChatAgent
+from app.orchestrator.orchestrator import AIOrchestrator
+from app.orchestrator.pipeline import ExecutionPipeline
+from app.document_intelligence.pipeline import DocumentIntelligencePipeline
+from app.models.base import BaseLLM
 
 
-class FakeGeminiClient:
+class FakeLLM(BaseLLM):
     async def generate_response(self, prompt: str, **kwargs) -> str:
         return "Hello from Nurofin Executive AI Engine"
 
@@ -15,8 +19,14 @@ class FakeGeminiClient:
 
 
 def test_chat_endpoint():
-    fake_client = FakeGeminiClient()
-    agent = ChatAgent(model_client=fake_client)
+    fake = FakeLLM()
+    pipeline = ExecutionPipeline(
+        gemini=fake,
+        ollama=fake,
+        knowledge_pipeline=DocumentIntelligencePipeline(),
+    )
+    orchestrator = AIOrchestrator(pipeline=pipeline)
+    agent = ChatAgent(orchestrator=orchestrator)
     service = ChatService(agent=agent)
     router = ChatRouter(service=service)
 

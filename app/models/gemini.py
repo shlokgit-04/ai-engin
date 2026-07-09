@@ -2,11 +2,12 @@ from google import genai
 from google.genai import types as genai_types
 from google.genai import errors as genai_errors
 
+from app.models.base import BaseLLM
 from app.core.logging import logger
 from app.core.exceptions import ModelError
 
 
-class GeminiClient:
+class GeminiClient(BaseLLM):
     def __init__(self, api_key: str, model: str = "gemini-2.0-flash") -> None:
         self._model = model
         self._client = genai.Client(api_key=api_key)
