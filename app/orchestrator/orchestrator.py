@@ -1,7 +1,7 @@
 import time
 from typing import Any
 
-from app.orchestrator.enums import RequestCategory
+from app.orchestrator.enums import RequestCategory, IntentType
 from app.orchestrator.classifier import Classifier
 from app.orchestrator.context import ExecutionContext
 from app.orchestrator.pipeline import ExecutionPipeline
@@ -13,6 +13,7 @@ from app.agents.task_agent import TaskAgent
 from app.agents.finance_agent import FinanceAgent
 from app.agents.recommendation_agent import RecommendationAgent
 from app.agents.notification_agent import NotificationAgent
+from app.tools.router import ToolRouter
 from app.core.logging import logger
 
 
@@ -21,10 +22,12 @@ class AIOrchestrator:
         self,
         pipeline: ExecutionPipeline,
         agents: dict[RequestCategory, BaseAgent] | None = None,
+        tool_router: ToolRouter | None = None,
     ) -> None:
         self._pipeline = pipeline
         self._classifier = Classifier()
         self._agents = agents if agents is not None else self._build_default_agents()
+        self._tool_router = tool_router if tool_router is not None else ToolRouter()
 
     def _build_default_agents(self) -> dict[RequestCategory, BaseAgent]:
         knowledge = KnowledgeAgent(pipeline=self._pipeline)
@@ -57,15 +60,26 @@ class AIOrchestrator:
     async def route_request(self, context: ExecutionContext) -> str:
         start = time.monotonic()
         category = self._classifier.classify(context.message)
+        intent = self._classifier.classify_intent(context.message)
 
-        agent = self._select_agent(category)
-        response = await agent.execute(context, category)
+        if intent != IntentType.GENERAL_CHAT:
+            tool = self._tool_router.route(intent)
+            response = await tool.execute(context, intent)
+            agent_type = tool.name()
+        elif category == RequestCategory.GENERAL_CHAT:
+            response = await self._pipeline.execute(category, context)
+            agent_type = "ExecutionPipeline"
+        else:
+            agent = self._select_agent(category)
+            response = await agent.execute(context, category)
+            agent_type = type(agent).__name__
 
         elapsed_ms = round((time.monotonic() - start) * 1000, 2)
         logger.info(
             "Orchestrator routed request",
             category=category.value,
-            agent=type(agent).__name__,
+            intent=intent.value,
+            agent=agent_type,
             elapsed_ms=elapsed_ms,
         )
         return response

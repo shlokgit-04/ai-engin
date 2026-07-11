@@ -25,6 +25,18 @@ from app.memory.base import BaseMemory
 from app.memory.chat_memory import ChatMemory
 from app.memory.manager import MemoryManager
 from app.security.permission_guard import PermissionGuard
+from app.tools.router import ToolRouter
+from app.tools.project_tool import ProjectTool
+from app.tools.task_tool import TaskTool
+from app.tools.planner_tool import PlannerTool
+from app.tools.notification_tool import NotificationTool
+from app.tools.dashboard_tool import DashboardTool
+from app.tools.executive_tool import ExecutiveTool
+from app.integrations.backend.client import BackendClient
+
+
+def get_backend_client() -> BackendClient:
+    return BackendClient()
 
 
 def get_gemini_client() -> GeminiClient:
@@ -55,6 +67,12 @@ def get_execution_pipeline() -> ExecutionPipeline:
         ollama=get_ollama_client(),
         knowledge_pipeline=get_knowledge_pipeline(),
     )
+
+
+def get_tool_router() -> ToolRouter:
+    router = ToolRouter()
+    router.register(ExecutiveTool())
+    return router
 
 
 def get_knowledge_agent() -> KnowledgeAgent:
@@ -101,7 +119,11 @@ def get_agent_map() -> dict[RequestCategory, BaseAgent]:
 
 
 def get_orchestrator() -> AIOrchestrator:
-    return AIOrchestrator(pipeline=get_execution_pipeline(), agents=get_agent_map())
+    return AIOrchestrator(
+        pipeline=get_execution_pipeline(),
+        agents=get_agent_map(),
+        tool_router=get_tool_router(),
+    )
 
 
 def get_chat_agent() -> ChatAgent:

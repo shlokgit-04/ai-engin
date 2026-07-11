@@ -1,4 +1,7 @@
+import contextlib
 import pytest
+from unittest.mock import AsyncMock, patch
+
 from app.orchestrator.classifier import Classifier
 from app.orchestrator.enums import RequestCategory
 from app.orchestrator.context import ExecutionContext
@@ -56,6 +59,30 @@ def pipeline(
 @pytest.fixture
 def orchestrator(pipeline: ExecutionPipeline) -> AIOrchestrator:
     return AIOrchestrator(pipeline=pipeline)
+
+
+@pytest.fixture(autouse=True)
+def _mock_backend_client():
+    """Prevent tools from making real HTTP calls."""
+    mock_instance = AsyncMock()
+    mock_instance.get = AsyncMock(return_value={"status": "success", "message": "OK"})
+    mock_instance.post = AsyncMock(return_value={"status": "success", "message": "OK"})
+    mock_instance.put = AsyncMock(return_value={"status": "success", "message": "OK"})
+    mock_instance.delete = AsyncMock(return_value={"status": "success", "message": "OK"})
+
+    modules = [
+        "app.integrations.backend.client",
+        "app.tools.project_tool",
+        "app.tools.task_tool",
+        "app.tools.planner_tool",
+        "app.tools.notification_tool",
+        "app.tools.dashboard_tool",
+        "app.executive.briefing",
+    ]
+    with contextlib.ExitStack() as stack:
+        for mod in modules:
+            stack.enter_context(patch(f"{mod}.BackendClient", return_value=mock_instance))
+        yield mock_instance
 
 
 class TestClassification:
@@ -174,11 +201,32 @@ class TestRouting:
         assert not ollama.was_called
 
     @pytest.mark.asyncio
-    async def test_task_placeholder(
-        self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM
+    async def test_task_routes_to_tool(
+        self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM, _mock_backend_client
     ):
+        """TASK_ASSISTANT intents now route through ToolRouter instead of TaskAgent."""
+        _mock_backend_client.post.return_value = {"status": "success", "message": "Task created."}
         result = await orchestrator.route_request(make_context("Create a task"))
-        assert result == FEATURE_PLACEHOLDER
+        assert "Task created" in result
+        assert not gemini.was_called
+        assert not ollama.was_called
+
+    @pytest.mark.asyncio
+    async def test_deadline_routes_to_tool(
+        self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM, _mock_backend_client
+    ):
+        _mock_backend_client.put.return_value = {"id": "t-1", "title": "Task", "due_date": "2026-07-15", "status": "pending", "priority": "normal", "assignee": None, "project_id": None}
+        result = await orchestrator.route_request(make_context("Set a deadline"))
+        assert "Deadline changed" in result
+        assert not gemini.was_called
+        assert not ollama.was_called
+
+    @pytest.mark.asyncio
+    async def test_reminder_routes_to_planner_tool(
+        self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM, _mock_backend_client
+    ):
+        result = await orchestrator.route_request(make_context("Set a reminder"))
+        assert "Reminder set" in result
         assert not gemini.was_called
         assert not ollama.was_called
 
