@@ -31,5 +31,7 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "nurofin"
 
+    backend_base_url: str = "http://localhost:8001"
+
 
 settings = Settings()
