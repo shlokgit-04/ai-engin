@@ -2,6 +2,9 @@ from app.core.config import settings
 from app.core.exceptions import ConfigurationError
 from app.models.gemini import GeminiClient
 from app.models.ollama import OllamaClient
+from app.models.providers.openrouter import OpenRouterProvider
+from app.models.providers.ollama_provider import OllamaProvider
+from app.models.providers.manager import ProviderManager
 from app.orchestrator.orchestrator import AIOrchestrator
 from app.orchestrator.pipeline import ExecutionPipeline
 from app.orchestrator.enums import RequestCategory
@@ -33,17 +36,17 @@ from app.tools.notification_tool import NotificationTool
 from app.tools.dashboard_tool import DashboardTool
 from app.tools.executive_tool import ExecutiveTool
 from app.integrations.backend.client import BackendClient
+from app.core.logging import logger
 
 
 def get_backend_client() -> BackendClient:
     return BackendClient()
 
 
-def get_gemini_client() -> GeminiClient:
+def get_gemini_client() -> GeminiClient | None:
     if not settings.gemini_api_key:
-        raise ConfigurationError(
-            "Gemini API key is missing. Please configure GEMINI_API_KEY in the .env file."
-        )
+        logger.warning("Gemini API key not configured, GeminiClient unavailable")
+        return None
     return GeminiClient(
         api_key=settings.gemini_api_key,
         model=settings.gemini_model,
@@ -57,12 +60,53 @@ def get_ollama_client() -> OllamaClient:
     )
 
 
+def get_openrouter_provider() -> OpenRouterProvider | None:
+    keys = settings.openrouter_api_keys
+    if not keys:
+        logger.warning("No OpenRouter API keys configured")
+        return None
+    return OpenRouterProvider(
+        api_keys=keys,
+        model=settings.openrouter_model,
+    )
+
+
+def get_ollama_provider() -> OllamaProvider:
+    return OllamaProvider(
+        base_url=settings.ollama_base_url,
+        model=settings.ollama_model,
+    )
+
+
+_provider_manager: ProviderManager | None = None
+
+
+def get_provider_manager() -> ProviderManager:
+    global _provider_manager
+    if _provider_manager is not None:
+        return _provider_manager
+
+    providers = {}
+    or_provider = get_openrouter_provider()
+    if or_provider:
+        providers["openrouter"] = or_provider
+    providers["ollama"] = get_ollama_provider()
+
+    default = settings.default_provider
+    if default not in providers:
+        default = next(iter(providers)) if providers else "ollama"
+
+    _provider_manager = ProviderManager(providers=providers, default_provider=default)
+    return _provider_manager
+
+
 def get_knowledge_pipeline() -> DocumentIntelligencePipeline:
     return DocumentIntelligencePipeline()
 
 
 def get_execution_pipeline() -> ExecutionPipeline:
     return ExecutionPipeline(
+        provider_manager=get_provider_manager(),
         gemini=get_gemini_client(),
         ollama=get_ollama_client(),
         knowledge_pipeline=get_knowledge_pipeline(),
@@ -88,7 +132,7 @@ def get_finance_agent() -> FinanceAgent:
 
 
 def get_meeting_agent() -> MeetingAgent:
-    return MeetingAgent()
+    return MeetingAgent(pipeline=get_execution_pipeline())
 
 
 def get_task_agent() -> TaskAgent:
@@ -151,6 +195,7 @@ def get_chat_service() -> ChatService:
 
 def get_models_health_service() -> ModelsHealthService:
     return ModelsHealthService(
+        provider_manager=get_provider_manager(),
         gemini=get_gemini_client(),
         ollama=get_ollama_client(),
     )

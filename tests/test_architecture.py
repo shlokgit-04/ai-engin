@@ -32,6 +32,8 @@ from app.document_intelligence.reranker.base import BaseReranker
 from app.security.permission_guard import PermissionGuard
 from app.document_intelligence.metadata.models import DocumentMetadata
 from app.models.base import BaseLLM
+from app.models.providers.base import ProviderHealth
+from app.models.providers.manager import ProviderManager
 from app.core.dependencies import (
     get_knowledge_agent,
     get_planner_agent,
@@ -62,9 +64,29 @@ class FakeKnowledgePipe:
         return "Document Intelligence Pipeline not implemented yet."
 
 
+class _FakeProvider:
+    """Minimal AIProvider stand-in for tests."""
+    provider_name = "fake"
+    current_model = "fake-model"
+
+    async def generate(self, prompt, **kwargs):
+        return f"fake:{prompt}"
+
+    async def generate_stream(self, prompt, **kwargs):
+        yield f"fake:{prompt}"
+
+    async def health_check(self):
+        return ProviderHealth(healthy=True, provider="fake", message="ok")
+
+    def list_models(self):
+        return []
+
+
 @pytest.fixture
 def pipeline() -> ExecutionPipeline:
+    pm = ProviderManager(providers={"fake": _FakeProvider()}, default_provider="fake")
     return ExecutionPipeline(
+        provider_manager=pm,
         gemini=FakeLLM(),
         ollama=FakeLLM(),
         knowledge_pipeline=FakeKnowledgePipe(),

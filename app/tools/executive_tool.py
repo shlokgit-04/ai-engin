@@ -15,7 +15,7 @@ class ExecutiveTool(BaseTool):
     async def execute(self, context: ExecutionContext, intent: IntentType) -> str:
         try:
             if intent == IntentType.DAILY_BRIEFING:
-                return await self._briefing_service.generate_briefing()
+                return await self._briefing_service.generate_briefing(auth_token=context.auth_token)
             return "I'm not sure how to handle that request."
         except Exception:
             logger.exception("ExecutiveTool error", intent=intent.value)

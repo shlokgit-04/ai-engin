@@ -77,6 +77,59 @@ WEEK_SCHEDULE = "You have {count} event(s) this week.\n\n{event_list}"
 
 EVENTS_LIST_ITEM = "  • {title} at {time}"
 
+# ── Meeting Intelligence ───────────────────────────────────────────────
+
+MEETINGS_LIST_HEADER = "You have {count} meeting(s).\n\n{meeting_list}"
+
+MEETINGS_LIST_ITEM = "  • {title} — {date} at {time}"
+
+MOM_UPLOADED = "Minutes of Meeting uploaded for meeting #{meeting_id} successfully."
+
+MOM_ANALYZED = (
+    "Meeting #{meeting_id} MOM Analysis\n\n"
+    "Executive Summary:\n{executive_summary}\n\n"
+    "Decisions:\n{decisions_list}\n\n"
+    "Action Items:\n{action_items_list}\n\n"
+    "Risks:\n{risks_list}\n\n"
+    "Follow-ups:\n{followups_list}"
+)
+
+TASKS_EXTRACTED = (
+    "Tasks extracted from meeting #{meeting_id}.\n\n"
+    "Meeting Summary Preview:\n{meeting_summary}\n\n"
+    "No tasks were automatically created. You can ask me to create specific tasks from this meeting."
+)
+
+EXTRACTED_TASKS_LIST_HEADER = "Meeting #{meeting_id} has {count} extracted task(s).\n\n{task_list}"
+
+EXTRACTED_TASKS_ITEM = "  • [{status}] {title} (confidence: {confidence}%)"
+
+EXTRACTED_TASKS_APPROVED = "{count} task(s) approved from meeting #{meeting_id}. Real tasks have been created."
+
+EXTRACTED_TASKS_REJECTED = "{count} task(s) rejected from meeting #{meeting_id}."
+
+MEETING_INVITATION_ACCEPTED = "Meeting invitation accepted successfully."
+
+MEETING_INVITATION_DECLINED = "Meeting invitation declined."
+
+MEETING_ACCEPTED_LIST = "Meeting #{meeting_id} acceptances ({count}):\n\n{names_list}"
+
+MEETING_DECLINED_LIST = "Meeting #{meeting_id} declines ({count}):\n\n{names_list}"
+
+MEETING_TIMELINE_HEADER = "Timeline for meeting #{meeting_id} ({count} event(s)):\n\n{timeline_list}"
+
+MEETING_TIMELINE_ITEM = "  [{action}] {description} ({user})"
+
+MEETING_DECISIONS_HEADER = "Decisions from meeting #{meeting_id}:\n\n{items_list}"
+
+MEETING_RISKS_HEADER = "Risks identified in meeting #{meeting_id}:\n\n{items_list}"
+
+MEETING_FOLLOWUPS_HEADER = "Follow-up items from meeting #{meeting_id}:\n\n{items_list}"
+
+MEETING_BLOCKERS_HEADER = "Blockers from meeting #{meeting_id}:\n\n{items_list}"
+
+LIST_ITEM_BULLET = "  • {item}"
+
 # ── Notifications ─────────────────────────────────────────────────────────
 
 NOTIFICATION_CREATED = "Notification created successfully."

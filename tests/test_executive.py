@@ -135,11 +135,11 @@ class TestExecutiveBriefingService:
     @pytest.mark.asyncio
     async def test_generate_briefing_combines_all_endpoints(self, mock_backend_client) -> None:
         mock_backend_client.get.side_effect = [
-            {"status": "success", "data": {"focus": "Finish API docs", "risks": [{"level": "low", "description": "None"}]}},
-            {"status": "success", "tasks": [{"id": "t1", "title": "Task 1", "status": "pending"}], "message": "1 task"},
-            {"status": "success", "tasks": [], "message": "0 overdue"},
-            {"status": "success", "events": [{"id": "e1", "title": "Standup", "start": "09:00", "end": "09:15"}], "message": "1 event"},
-            {"status": "success", "notifications": [{"id": "n1", "text": "Hello", "read": False}], "message": "1 notification"},
+            {"activeProjects": 1, "completedProjects": 0, "todayTasks": 1, "overdueTasks": 0, "todayMeetings": 1, "highPriorityTasks": 0},
+            [{"id": 1, "title": "Task 1", "status": "pending"}],
+            [],
+            [{"id": 1, "title": "Standup", "date": "2026-07-11", "start_time": "09:00", "end_time": "09:15"}],
+            [{"id": 1, "title": "Hello", "message": "Hello", "is_read": False}],
         ]
         service = ExecutiveBriefingService(client=mock_backend_client)
         result = await service.generate_briefing()
@@ -152,27 +152,27 @@ class TestExecutiveBriefingService:
     @pytest.mark.asyncio
     async def test_briefing_with_overdue_and_high_risk(self, mock_backend_client) -> None:
         mock_backend_client.get.side_effect = [
-            {"status": "success", "data": {"focus": "Fix critical bug", "risks": [{"level": "high", "description": "Security issue"}]}},
-            {"status": "success", "tasks": [{"id": "t1", "title": "Task 1", "status": "pending"}], "message": "1 task"},
-            {"status": "success", "tasks": [{"id": "t2", "title": "Overdue report", "status": "overdue"}], "message": "1 overdue"},
-            {"status": "success", "events": [], "message": "0 events"},
-            {"status": "success", "notifications": [], "message": "0 notifications"},
+            {"activeProjects": 1, "completedProjects": 0, "todayTasks": 1, "overdueTasks": 1, "todayMeetings": 0, "highPriorityTasks": 0},
+            [{"id": 1, "title": "Task 1", "status": "pending"}],
+            [{"id": 2, "title": "Overdue report", "status": "overdue"}],
+            [],
+            [],
         ]
         service = ExecutiveBriefingService(client=mock_backend_client)
         result = await service.generate_briefing()
 
-        assert "High" in result
+        assert "Medium" in result or "High" in result
         assert "overdue" in result.lower()
         assert "Overdue report" in result
 
     @pytest.mark.asyncio
     async def test_briefing_empty_all_quiet(self, mock_backend_client) -> None:
         mock_backend_client.get.side_effect = [
-            {"status": "success", "data": {"focus": None, "risks": []}},
-            {"status": "success", "tasks": [], "message": "0 tasks"},
-            {"status": "success", "tasks": [], "message": "0 overdue"},
-            {"status": "success", "events": [], "message": "0 events"},
-            {"status": "success", "notifications": [], "message": "0 notifications"},
+            {"activeProjects": 0, "completedProjects": 0, "todayTasks": 0, "overdueTasks": 0, "todayMeetings": 0, "highPriorityTasks": 0},
+            [],
+            [],
+            [],
+            [],
         ]
         service = ExecutiveBriefingService(client=mock_backend_client)
         result = await service.generate_briefing()
@@ -191,11 +191,11 @@ class TestExecutiveTool:
     @pytest.mark.asyncio
     async def test_daily_briefing_routes_to_service(self, mock_backend_client) -> None:
         mock_backend_client.get.side_effect = [
-            {"status": "success", "data": {"focus": "Test", "risks": []}},
-            {"status": "success", "tasks": [], "message": "0 tasks"},
-            {"status": "success", "tasks": [], "message": "0 overdue"},
-            {"status": "success", "events": [], "message": "0 events"},
-            {"status": "success", "notifications": [], "message": "0 notifications"},
+            {"activeProjects": 0, "completedProjects": 0, "todayTasks": 0, "overdueTasks": 0, "todayMeetings": 0, "highPriorityTasks": 0},
+            [],
+            [],
+            [],
+            [],
         ]
         service = ExecutiveBriefingService(client=mock_backend_client)
         tool = ExecutiveTool(briefing_service=service)

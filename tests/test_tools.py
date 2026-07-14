@@ -30,6 +30,8 @@ from app.tools.notification_tool import NotificationTool
 from app.tools.dashboard_tool import DashboardTool
 from app.tools.executive_tool import ExecutiveTool
 from app.models.base import BaseLLM
+from app.models.providers.base import ProviderHealth
+from app.models.providers.manager import ProviderManager
 
 
 # ---------------------------------------------------------------------------
@@ -49,13 +51,32 @@ class FakeKnowledgePipe:
         return "Document Intelligence Pipeline not implemented yet."
 
 
+class _FakeProvider:
+    provider_name = "fake"
+    current_model = "fake-model"
+
+    async def generate(self, prompt, **kwargs):
+        return f"fake:{prompt}"
+
+    async def generate_stream(self, prompt, **kwargs):
+        yield f"fake:{prompt}"
+
+    async def health_check(self):
+        return ProviderHealth(healthy=True, provider="fake", message="ok")
+
+    def list_models(self):
+        return []
+
+
 def make_context(message: str) -> ExecutionContext:
     return ExecutionContext(message=message)
 
 
 @pytest.fixture
 def pipeline() -> ExecutionPipeline:
+    pm = ProviderManager(providers={"fake": _FakeProvider()}, default_provider="fake")
     return ExecutionPipeline(
+        provider_manager=pm,
         gemini=FakeLLM(),
         ollama=FakeLLM(),
         knowledge_pipeline=FakeKnowledgePipe(),
@@ -221,22 +242,23 @@ class TestToolMockResponses:
 
     @pytest.mark.asyncio
     async def test_show_projects_returns_formatted(self, _mock_backend_client) -> None:
-        _mock_backend_client.get.return_value = {"status": "success", "projects": []}
+        _mock_backend_client.get.return_value = []
         tool = ProjectTool()
         result = await tool.execute(make_context("test"), IntentType.SHOW_PROJECTS)
         assert "no projects" in result.lower()
 
     @pytest.mark.asyncio
     async def test_show_project_status_returns_formatted(self, _mock_backend_client) -> None:
-        _mock_backend_client.get.return_value = {"id": "p-1", "name": "Test", "status": "On Track"}
+        _mock_backend_client.get.return_value = [{"id": 1, "name": "Test", "status": "On Track", "progress": 50, "end_date": "2026-12-31"}]
         tool = ProjectTool()
-        result = await tool.execute(make_context("test"), IntentType.SHOW_PROJECT_STATUS)
+        result = await tool.execute(make_context("Show project Test"), IntentType.SHOW_PROJECT_STATUS)
         assert "Project:" in result
         assert "Test" in result
         assert "On Track" in result
 
     @pytest.mark.asyncio
     async def test_delete_project_returns_formatted(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = [{"id": 1, "name": "BuildTrack"}]
         _mock_backend_client.delete.return_value = {"status": "success", "message": "Project deleted."}
         tool = ProjectTool()
         result = await tool.execute(make_context("Delete project BuildTrack"), IntentType.DELETE_PROJECT)
@@ -245,15 +267,17 @@ class TestToolMockResponses:
 
     @pytest.mark.asyncio
     async def test_rename_project_returns_formatted(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = [{"id": 1, "name": "Project"}]
         _mock_backend_client.put.return_value = {"status": "success", "message": "Project renamed."}
         tool = ProjectTool()
-        result = await tool.execute(make_context("Rename project to NewName"), IntentType.RENAME_PROJECT)
+        result = await tool.execute(make_context("Rename project Project to NewName"), IntentType.RENAME_PROJECT)
         assert "renamed" in result.lower()
 
     # ── Task fallback actions ───────────────────────────────────────────
 
     @pytest.mark.asyncio
     async def test_delete_task_returns_formatted(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = [{"id": 1, "title": "API Integration"}]
         _mock_backend_client.delete.return_value = {"status": "success", "message": "Task deleted."}
         tool = TaskTool()
         result = await tool.execute(make_context("Delete task API Integration"), IntentType.DELETE_TASK)
@@ -271,54 +295,62 @@ class TestToolMockResponses:
 
     @pytest.mark.asyncio
     async def test_assign_task_returns_formatted(self, _mock_backend_client) -> None:
-        resp = {"status": "success", "id": "t-1", "title": "Test task", "assignee": "user"}
+        _mock_backend_client.get.side_effect = [
+            [{"id": 1, "title": "Test task"}],
+            [{"id": 1, "full_name": "test", "username": "test"}],
+        ]
+        resp = {"id": 1, "title": "Test task", "assigned_to": {"id": 1, "name": "test"}}
         _mock_backend_client.put.return_value = resp
         tool = TaskTool()
-        result = await tool.execute(make_context("test"), IntentType.ASSIGN_TASK)
+        result = await tool.execute(make_context("Assign task Test task to test"), IntentType.ASSIGN_TASK)
         assert "assigned" in result.lower()
 
     @pytest.mark.asyncio
     async def test_update_task_returns_formatted(self, _mock_backend_client) -> None:
-        resp = {"status": "success", "id": "t-1", "title": "Test task"}
+        _mock_backend_client.get.return_value = [{"id": 1, "title": "Test task"}]
+        resp = {"id": 1, "title": "Test task"}
         _mock_backend_client.put.return_value = resp
         tool = TaskTool()
-        result = await tool.execute(make_context("test"), IntentType.UPDATE_TASK)
+        result = await tool.execute(make_context("Update task Test task"), IntentType.UPDATE_TASK)
         assert "updated" in result.lower()
 
     @pytest.mark.asyncio
     async def test_complete_task_returns_formatted(self, _mock_backend_client) -> None:
-        resp = {"status": "success", "id": "t-1", "title": "Test task"}
+        _mock_backend_client.get.return_value = [{"id": 1, "title": "Test task"}]
+        resp = {"id": 1, "title": "Test task"}
         _mock_backend_client.put.return_value = resp
         tool = TaskTool()
-        result = await tool.execute(make_context("test"), IntentType.COMPLETE_TASK)
+        result = await tool.execute(make_context("Complete task Test task"), IntentType.COMPLETE_TASK)
         assert "completed" in result.lower()
 
     @pytest.mark.asyncio
     async def test_change_deadline_returns_formatted(self, _mock_backend_client) -> None:
-        resp = {"status": "success", "id": "t-1", "title": "Test", "due_date": "2026-07-15"}
+        _mock_backend_client.get.return_value = [{"id": 1, "title": "Test"}]
+        resp = {"id": 1, "title": "Test", "due_date": "2026-07-15"}
         _mock_backend_client.put.return_value = resp
         tool = TaskTool()
-        result = await tool.execute(make_context("test"), IntentType.CHANGE_DEADLINE)
+        result = await tool.execute(make_context("Change deadline Test to July 15"), IntentType.CHANGE_DEADLINE)
         assert "Deadline" in result
 
     @pytest.mark.asyncio
     async def test_change_priority_returns_formatted(self, _mock_backend_client) -> None:
-        resp = {"status": "success", "id": "t-1", "title": "Test", "priority": "high"}
+        _mock_backend_client.get.return_value = [{"id": 1, "title": "Test"}]
+        resp = {"id": 1, "title": "Test", "priority": "high"}
         _mock_backend_client.put.return_value = resp
         tool = TaskTool()
-        result = await tool.execute(make_context("test"), IntentType.CHANGE_PRIORITY)
+        result = await tool.execute(make_context("Set priority Test to high"), IntentType.CHANGE_PRIORITY)
         assert "Priority" in result
 
     @pytest.mark.asyncio
     async def test_show_tasks_returns_formatted(self, _mock_backend_client) -> None:
-        _mock_backend_client.get.return_value = {"status": "success", "tasks": [], "message": "3 tasks found."}
+        _mock_backend_client.get.return_value = []
         tool = TaskTool()
         result = await tool.execute(make_context("test"), IntentType.SHOW_TASKS)
         assert "no tasks" in result.lower()
 
     @pytest.mark.asyncio
     async def test_show_overdue_returns_formatted(self, _mock_backend_client) -> None:
-        _mock_backend_client.get.return_value = {"status": "success", "tasks": [], "message": "1 overdue task."}
+        _mock_backend_client.get.return_value = []
         tool = TaskTool()
         result = await tool.execute(make_context("test"), IntentType.SHOW_OVERDUE)
         assert "no overdue" in result.lower()
@@ -342,28 +374,30 @@ class TestToolMockResponses:
 
     @pytest.mark.asyncio
     async def test_cancel_meeting_returns_formatted(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = [{"id": 1, "title": "test meeting"}]
         _mock_backend_client.delete.return_value = {"status": "success", "message": "Meeting cancelled."}
         tool = PlannerTool()
-        result = await tool.execute(make_context("test"), IntentType.CANCEL_MEETING)
+        result = await tool.execute(make_context("Cancel meeting test meeting"), IntentType.CANCEL_MEETING)
         assert "cancelled" in result.lower()
 
     @pytest.mark.asyncio
     async def test_reschedule_meeting_returns_formatted(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = [{"id": 1, "title": "test meeting"}]
         _mock_backend_client.put.return_value = {"status": "success", "message": "Meeting rescheduled."}
         tool = PlannerTool()
-        result = await tool.execute(make_context("test"), IntentType.RESCHEDULE_MEETING)
+        result = await tool.execute(make_context("Reschedule meeting test meeting to tomorrow"), IntentType.RESCHEDULE_MEETING)
         assert "rescheduled" in result.lower()
 
     @pytest.mark.asyncio
     async def test_today_schedule_returns_formatted(self, _mock_backend_client) -> None:
-        _mock_backend_client.get.return_value = {"status": "success", "events": []}
+        _mock_backend_client.get.return_value = []
         tool = PlannerTool()
         result = await tool.execute(make_context("test"), IntentType.TODAY_SCHEDULE)
         assert "Today" in result
 
     @pytest.mark.asyncio
     async def test_week_schedule_returns_formatted(self, _mock_backend_client) -> None:
-        _mock_backend_client.get.return_value = {"status": "success", "events": []}
+        _mock_backend_client.get.return_value = []
         tool = PlannerTool()
         result = await tool.execute(make_context("test"), IntentType.WEEK_SCHEDULE)
         assert "No events" in result
@@ -372,7 +406,7 @@ class TestToolMockResponses:
 
     @pytest.mark.asyncio
     async def test_show_notifications_returns_formatted(self, _mock_backend_client) -> None:
-        _mock_backend_client.get.return_value = {"status": "success", "notifications": []}
+        _mock_backend_client.get.return_value = []
         tool = NotificationTool()
         result = await tool.execute(make_context("test"), IntentType.SHOW_NOTIFICATIONS)
         assert "no new notifications" in result.lower()
@@ -396,19 +430,26 @@ class TestToolMockResponses:
     @pytest.mark.asyncio
     async def test_focus_today_returns_formatted(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "data": {"focus": "Review API design"},
+            "activeProjects": 1,
+            "completedProjects": 0,
+            "todayTasks": 2,
+            "overdueTasks": 0,
+            "todayMeetings": 1,
+            "highPriorityTasks": 0,
         }
         tool = DashboardTool()
         result = await tool.execute(make_context("test"), IntentType.FOCUS_TODAY)
         assert "Focus for today" in result
-        assert "Review API design" in result
 
     @pytest.mark.asyncio
     async def test_executive_summary_returns_formatted(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "data": {"summary": "All on track."},
+            "activeProjects": 1,
+            "completedProjects": 0,
+            "todayTasks": 2,
+            "overdueTasks": 0,
+            "todayMeetings": 1,
+            "highPriorityTasks": 0,
         }
         tool = DashboardTool()
         result = await tool.execute(make_context("test"), IntentType.EXECUTIVE_SUMMARY)
@@ -417,8 +458,12 @@ class TestToolMockResponses:
     @pytest.mark.asyncio
     async def test_today_priorities_returns_formatted(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "data": {"priorities": [{"rank": 1, "title": "Test"}]},
+            "activeProjects": 0,
+            "completedProjects": 0,
+            "todayTasks": 0,
+            "overdueTasks": 0,
+            "todayMeetings": 0,
+            "highPriorityTasks": 0,
         }
         tool = DashboardTool()
         result = await tool.execute(make_context("test"), IntentType.TODAY_PRIORITIES)
@@ -427,8 +472,12 @@ class TestToolMockResponses:
     @pytest.mark.asyncio
     async def test_business_risk_returns_formatted(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "data": {"risks": [{"level": "high", "description": "Risk"}]},
+            "activeProjects": 0,
+            "completedProjects": 0,
+            "todayTasks": 0,
+            "overdueTasks": 3,
+            "todayMeetings": 0,
+            "highPriorityTasks": 0,
         }
         tool = DashboardTool()
         result = await tool.execute(make_context("test"), IntentType.BUSINESS_RISK)
@@ -600,7 +649,7 @@ class TestToolRouting:
     async def test_show_tasks_routes_to_task_tool(
         self, orchestrator: AIOrchestrator, _mock_backend_client
     ):
-        _mock_backend_client.get.return_value = {"status": "success", "tasks": [], "message": "3 tasks found."}
+        _mock_backend_client.get.return_value = []
         result = await orchestrator.route_request(make_context("Show my tasks"))
         assert "no tasks" in result
 
@@ -616,7 +665,7 @@ class TestToolRouting:
     async def test_show_notifications_routes_to_notification_tool(
         self, orchestrator: AIOrchestrator, _mock_backend_client
     ):
-        _mock_backend_client.get.return_value = {"status": "success", "notifications": [], "message": "2 notifications."}
+        _mock_backend_client.get.return_value = []
         result = await orchestrator.route_request(make_context("Show notifications"))
         assert "notifications" in result.lower()
 
@@ -625,11 +674,11 @@ class TestToolRouting:
         self, orchestrator: AIOrchestrator, _mock_backend_client
     ):
         _mock_backend_client.get.side_effect = [
-            {"status": "success", "data": {"focus": "Review API design", "risks": []}},
-            {"status": "success", "tasks": [{"id": "t1", "title": "Task 1", "status": "pending"}], "message": "1 task"},
-            {"status": "success", "tasks": [], "message": "0 overdue"},
-            {"status": "success", "events": [{"id": "e1", "title": "Standup", "start": "09:00", "end": "09:15"}], "message": "1 event"},
-            {"status": "success", "notifications": [], "message": "0 notifications"},
+            {"activeProjects": 1, "completedProjects": 0, "todayTasks": 1, "overdueTasks": 0, "todayMeetings": 1, "highPriorityTasks": 0},
+            [{"id": 1, "title": "Task 1", "status": "pending"}],
+            [],
+            [{"id": 1, "title": "Standup", "date": "2026-07-11", "start_time": "09:00"}],
+            [],
         ]
         result = await orchestrator.route_request(make_context("What should I focus on today"))
         assert "Executive Brief" in result
@@ -655,15 +704,16 @@ class TestToolBackendIntegration:
         tool = ProjectTool()
         await tool.execute(make_context("Create project BuildTrack"), IntentType.CREATE_PROJECT)
         _mock_backend_client.post.assert_called_once_with(
-            "/projects",
+            "/api/v1/projects",
             json_body={"name": "BuildTrack", "description": ""},
+            auth_token=None,
         )
 
     @pytest.mark.asyncio
     async def test_show_projects_calls_get_projects(self, _mock_backend_client) -> None:
         tool = ProjectTool()
         await tool.execute(make_context("Show projects"), IntentType.SHOW_PROJECTS)
-        _mock_backend_client.get.assert_called_once_with("/projects")
+        _mock_backend_client.get.assert_called_once_with("/api/v1/projects", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_create_task_calls_post_tasks(self, _mock_backend_client) -> None:
@@ -673,15 +723,17 @@ class TestToolBackendIntegration:
 
     @pytest.mark.asyncio
     async def test_complete_task_calls_put_tasks(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = [{"id": 1, "title": "MyTask"}]
+        _mock_backend_client.put.return_value = {"id": 1, "title": "MyTask", "status": "completed"}
         tool = TaskTool()
-        await tool.execute(make_context("Complete task"), IntentType.COMPLETE_TASK)
+        await tool.execute(make_context("Complete task MyTask"), IntentType.COMPLETE_TASK)
         _mock_backend_client.put.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_show_overdue_calls_get_overdue(self, _mock_backend_client) -> None:
         tool = TaskTool()
         await tool.execute(make_context("Show overdue tasks"), IntentType.SHOW_OVERDUE)
-        _mock_backend_client.get.assert_called_once_with("/tasks/overdue")
+        _mock_backend_client.get.assert_called_once_with("/api/v1/tasks/overdue", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_add_meeting_calls_post_events(self, _mock_backend_client) -> None:
@@ -689,21 +741,22 @@ class TestToolBackendIntegration:
         tool = PlannerTool()
         await tool.execute(make_context("Schedule a meeting"), IntentType.ADD_MEETING)
         _mock_backend_client.post.assert_called_once_with(
-            "/planner/events",
+            "/api/v1/meetings",
             json_body={"title": "Meeting"},
+            auth_token=None,
         )
 
     @pytest.mark.asyncio
     async def test_today_schedule_calls_get_today(self, _mock_backend_client) -> None:
         tool = PlannerTool()
         await tool.execute(make_context("What is my schedule today"), IntentType.TODAY_SCHEDULE)
-        _mock_backend_client.get.assert_called_once_with("/planner/today")
+        _mock_backend_client.get.assert_called_once_with("/api/v1/meetings", params={"filter": "today"}, auth_token=None)
 
     @pytest.mark.asyncio
     async def test_show_notifications_calls_get_notifications(self, _mock_backend_client) -> None:
         tool = NotificationTool()
         await tool.execute(make_context("Show notifications"), IntentType.SHOW_NOTIFICATIONS)
-        _mock_backend_client.get.assert_called_once_with("/notifications")
+        _mock_backend_client.get.assert_called_once_with("/api/v1/notifications", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_create_notification_calls_post_notifications(self, _mock_backend_client) -> None:
@@ -714,27 +767,33 @@ class TestToolBackendIntegration:
     @pytest.mark.asyncio
     async def test_dashboard_calls_get_dashboard(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "data": {"focus": "Review API", "summary": "All good", "priorities": [], "risks": []},
+            "activeProjects": 1,
+            "completedProjects": 0,
+            "todayTasks": 2,
+            "overdueTasks": 0,
+            "todayMeetings": 1,
+            "highPriorityTasks": 0,
         }
         tool = DashboardTool()
         await tool.execute(make_context("Focus"), IntentType.FOCUS_TODAY)
-        _mock_backend_client.get.assert_called_once_with("/dashboard")
+        _mock_backend_client.get.assert_called_once_with("/api/v1/dashboard/summary", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_delete_project_calls_delete_projects(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = [{"id": 42, "name": "BuildTrack"}]
         tool = ProjectTool()
         await tool.execute(make_context("Delete project BuildTrack"), IntentType.DELETE_PROJECT)
-        _mock_backend_client.delete.assert_called_once_with("/projects/BuildTrack")
+        _mock_backend_client.delete.assert_called_once_with("/api/v1/projects/42", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_delete_task_calls_delete_tasks(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = [{"id": 99, "title": "t-123"}]
         tool = TaskTool()
         await tool.execute(make_context("Delete task t-123"), IntentType.DELETE_TASK)
-        _mock_backend_client.delete.assert_called_once_with("/tasks/t-123")
+        _mock_backend_client.delete.assert_called_once_with("/api/v1/tasks/99", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_mark_notification_read_calls_put(self, _mock_backend_client) -> None:
         tool = NotificationTool()
         await tool.execute(make_context("Mark notification n-45 as read"), IntentType.MARK_AS_READ)
-        _mock_backend_client.put.assert_called_once_with("/notifications/n-45/read")
+        _mock_backend_client.put.assert_called_once_with("/api/v1/notifications/n-45/read", auth_token=None)

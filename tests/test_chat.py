@@ -8,6 +8,8 @@ from app.orchestrator.orchestrator import AIOrchestrator
 from app.orchestrator.pipeline import ExecutionPipeline
 from app.document_intelligence.pipeline import DocumentIntelligencePipeline
 from app.models.base import BaseLLM
+from app.models.providers.base import ProviderHealth
+from app.models.providers.manager import ProviderManager
 
 
 class FakeLLM(BaseLLM):
@@ -18,9 +20,28 @@ class FakeLLM(BaseLLM):
         return True
 
 
+class _FakeProvider:
+    provider_name = "fake"
+    current_model = "fake-model"
+
+    async def generate(self, prompt, **kwargs):
+        return "Hello from Nurofin Executive AI Engine"
+
+    async def generate_stream(self, prompt, **kwargs):
+        yield "Hello from Nurofin Executive AI Engine"
+
+    async def health_check(self):
+        return ProviderHealth(healthy=True, provider="fake", message="ok")
+
+    def list_models(self):
+        return []
+
+
 def test_chat_endpoint():
     fake = FakeLLM()
+    pm = ProviderManager(providers={"fake": _FakeProvider()}, default_provider="fake")
     pipeline = ExecutionPipeline(
+        provider_manager=pm,
         gemini=fake,
         ollama=fake,
         knowledge_pipeline=DocumentIntelligencePipeline(),

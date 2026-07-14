@@ -4,7 +4,6 @@ from app.tools.base import BaseTool
 from app.orchestrator.context import ExecutionContext
 from app.orchestrator.enums import IntentType
 from app.integrations.backend.client import BackendClient
-from app.integrations.backend.models import Task, TaskListResponse, StatusResponse
 from app.integrations.backend.exceptions import (
     BackendNotFoundError,
     BackendConnectionError,
@@ -12,7 +11,7 @@ from app.integrations.backend.exceptions import (
     BackendServerError,
 )
 from app.response.formatter import ResponseFormatter
-from app.executive.params import extract_task_title, extract_task_id, extract_priority, extract_date, extract_task_identifier
+from app.executive.params import extract_task_title, extract_task_id, extract_priority, extract_date, extract_task_identifier, extract_assignee
 from app.executive.validation import validate_not_empty, validate_priority
 from app.executive.suggestions import get_suggestion
 from app.core.logging import logger
@@ -52,6 +51,7 @@ class TaskTool(BaseTool):
 
     async def _route(self, context: ExecutionContext, intent: IntentType) -> str:
         start = time.monotonic()
+        token = context.auth_token
 
         if intent == IntentType.CREATE_TASK:
             title = extract_task_title(context.message, "New Task")
@@ -60,103 +60,136 @@ class TaskTool(BaseTool):
                 return err
             priority = extract_priority(context.message)
             due_date = extract_date(context.message) or "Not set"
-            data = await self._client.post("/tasks", json_body={"title": title, "status": "pending"})
-            resp = StatusResponse(**data)
+            await self._client.post("/api/v1/tasks", json_body={"title": title, "status": "todo"}, auth_token=token)
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, {
                 "priority": priority.title(),
                 "due_date": due_date,
             })
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, title=title, priority=priority, endpoint="POST /tasks", elapsed_ms=elapsed)
+            logger.info("TaskTool executed", intent=intent.value, title=title, priority=priority, endpoint="POST /api/v1/tasks", elapsed_ms=elapsed)
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.COMPLETE_TASK:
-            tid = extract_task_id(context.message, context)
-            data = await self._client.put(f"/tasks/{tid}", json_body={"status": "completed"})
-            task = Task(**data)
+            task_name = extract_task_id(context.message, context)
+            tid = await self._find_task_id_by_name(task_name, token)
+            if tid is None:
+                return f"I couldn't find a task named \"{task_name}\"."
+            data = await self._client.put(f"/api/v1/tasks/{tid}", json_body={"status": "completed"}, auth_token=token)
             suggestion = get_suggestion(intent.value)
-            result = self._formatter.format(intent, task.model_dump())
+            result = self._formatter.format(intent, {"title": data.get("title", "task"), "status": "completed"})
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, task_id=tid, endpoint=f"PUT /tasks/{tid}", elapsed_ms=elapsed)
+            logger.info("TaskTool executed", intent=intent.value, task_id=tid, endpoint=f"PUT /api/v1/tasks/{tid}", elapsed_ms=elapsed)
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.SHOW_TASKS:
-            data = await self._client.get("/tasks")
-            resp = TaskListResponse(**data)
+            tasks = await self._client.get("/api/v1/tasks", auth_token=token)
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, endpoint="GET /tasks", task_count=len(resp.tasks), elapsed_ms=elapsed)
-            return self._formatter.format(intent, {"tasks": [t.model_dump() for t in resp.tasks]})
+            logger.info("TaskTool executed", intent=intent.value, endpoint="GET /api/v1/tasks", task_count=len(tasks), elapsed_ms=elapsed)
+            items = [{"title": t.get("title", ""), "status": t.get("status", "")} for t in (tasks or [])]
+            return self._formatter.format(intent, {"tasks": items})
 
         if intent == IntentType.SHOW_OVERDUE:
-            data = await self._client.get("/tasks/overdue")
-            resp = TaskListResponse(**data)
+            tasks = await self._client.get("/api/v1/tasks/overdue", auth_token=token)
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, endpoint="GET /tasks/overdue", task_count=len(resp.tasks), elapsed_ms=elapsed)
-            return self._formatter.format(intent, {"tasks": [t.model_dump() for t in resp.tasks]})
+            logger.info("TaskTool executed", intent=intent.value, endpoint="GET /api/v1/tasks/overdue", task_count=len(tasks), elapsed_ms=elapsed)
+            items = [{"title": t.get("title", ""), "status": t.get("status", "")} for t in (tasks or [])]
+            return self._formatter.format(intent, {"tasks": items})
 
         if intent == IntentType.ASSIGN_TASK:
-            tid = extract_task_id(context.message, context)
-            assignee = context.metadata.get("assignee", "user")
-            data = await self._client.put(f"/tasks/{tid}", json_body={"assignee": assignee})
-            task = Task(**data)
+            task_name = extract_task_id(context.message, context)
+            assignee_name = extract_assignee(context.message)
+            tid = await self._find_task_id_by_name(task_name, token)
+            if tid is None:
+                return f"I couldn't find a task named \"{task_name}\"."
+            uid = await self._find_user_id_by_name(assignee_name, token)
+            if uid is None:
+                return f"I couldn't find a user named \"{assignee_name}\"."
+            await self._client.put(f"/api/v1/tasks/{tid}", json_body={"assigned_to_id": uid}, auth_token=token)
             suggestion = get_suggestion(intent.value)
-            result = self._formatter.format(intent, {"assignee": task.assignee or assignee})
+            result = self._formatter.format(intent, {"assignee": assignee_name})
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, task_id=tid, assignee=assignee, endpoint=f"PUT /tasks/{tid}", elapsed_ms=elapsed)
+            logger.info("TaskTool executed", intent=intent.value, task_id=tid, assignee=assignee_name, endpoint=f"PUT /api/v1/tasks/{tid}", elapsed_ms=elapsed)
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.UPDATE_TASK:
-            tid = extract_task_id(context.message, context)
+            task_name = extract_task_id(context.message, context)
             title = extract_task_title(context.message)
             valid, err = validate_not_empty(title, "Task title")
             if not valid:
                 return err
-            data = await self._client.put(f"/tasks/{tid}", json_body={"title": title})
-            task = Task(**data)
+            tid = await self._find_task_id_by_name(task_name, token)
+            if tid is None:
+                return f"I couldn't find a task named \"{task_name}\"."
+            await self._client.put(f"/api/v1/tasks/{tid}", json_body={"title": title}, auth_token=token)
             suggestion = get_suggestion(intent.value)
-            result = self._formatter.format(intent, task.model_dump())
+            result = self._formatter.format(intent, {"title": title})
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, task_id=tid, title=title, endpoint=f"PUT /tasks/{tid}", elapsed_ms=elapsed)
+            logger.info("TaskTool executed", intent=intent.value, task_id=tid, title=title, endpoint=f"PUT /api/v1/tasks/{tid}", elapsed_ms=elapsed)
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.CHANGE_DEADLINE:
-            tid = extract_task_id(context.message, context)
+            task_name = extract_task_id(context.message, context)
             due_date = extract_date(context.message) or "2026-07-15"
-            data = await self._client.put(f"/tasks/{tid}", json_body={"due_date": due_date})
-            task = Task(**data)
+            tid = await self._find_task_id_by_name(task_name, token)
+            if tid is None:
+                return f"I couldn't find a task named \"{task_name}\"."
+            await self._client.put(f"/api/v1/tasks/{tid}", json_body={"deadline": due_date}, auth_token=token)
             suggestion = get_suggestion(intent.value)
-            result = self._formatter.format(intent, {"due_date": task.due_date or due_date})
+            result = self._formatter.format(intent, {"due_date": due_date})
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, task_id=tid, due_date=due_date, endpoint=f"PUT /tasks/{tid}", elapsed_ms=elapsed)
+            logger.info("TaskTool executed", intent=intent.value, task_id=tid, due_date=due_date, endpoint=f"PUT /api/v1/tasks/{tid}", elapsed_ms=elapsed)
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.CHANGE_PRIORITY:
-            tid = extract_task_id(context.message, context)
+            task_name = extract_task_id(context.message, context)
             priority = extract_priority(context.message)
             valid, err = validate_priority(priority)
             if not valid:
                 return err
-            data = await self._client.put(f"/tasks/{tid}", json_body={"priority": priority})
-            task = Task(**data)
+            tid = await self._find_task_id_by_name(task_name, token)
+            if tid is None:
+                return f"I couldn't find a task named \"{task_name}\"."
+            await self._client.put(f"/api/v1/tasks/{tid}", json_body={"priority": priority}, auth_token=token)
             suggestion = get_suggestion(intent.value)
-            result = self._formatter.format(intent, {"priority": task.priority or priority})
+            result = self._formatter.format(intent, {"priority": priority})
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, task_id=tid, priority=priority, endpoint=f"PUT /tasks/{tid}", elapsed_ms=elapsed)
+            logger.info("TaskTool executed", intent=intent.value, task_id=tid, priority=priority, endpoint=f"PUT /api/v1/tasks/{tid}", elapsed_ms=elapsed)
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.DELETE_TASK:
-            tid = extract_task_identifier(context.message)
-            if not tid:
+            task_name = extract_task_identifier(context.message)
+            if not task_name:
                 return "I couldn't determine which task you want to delete."
-            await self._client.delete(f"/tasks/{tid}")
+            tid = await self._find_task_id_by_name(task_name, token)
+            if tid is None:
+                return f"I couldn't find a task named \"{task_name}\"."
+            await self._client.delete(f"/api/v1/tasks/{tid}", auth_token=token)
             suggestion = get_suggestion(intent.value)
-            result = self._formatter.format(intent, {"name": tid})
+            result = self._formatter.format(intent, {"name": task_name})
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, task_id=tid, endpoint=f"DELETE /tasks/{tid}", elapsed_ms=elapsed)
+            logger.info("TaskTool executed", intent=intent.value, task_id=tid, endpoint=f"DELETE /api/v1/tasks/{tid}", elapsed_ms=elapsed)
             return f"{result}\n\n{suggestion}"
 
         return "I'm not sure how to handle that request."
+
+    async def _find_task_id_by_name(self, name: str, token: str) -> int | None:
+        if name == "default":
+            return None
+        tasks = await self._client.get("/api/v1/tasks", auth_token=token)
+        for t in (tasks or []):
+            if t.get("title", "").lower() == name.lower():
+                return t.get("id")
+        return None
+
+    async def _find_user_id_by_name(self, name: str, token: str) -> int | None:
+        users = await self._client.get("/api/v1/users/", auth_token=token)
+        for u in (users or []):
+            full_name = (u.get("full_name") or "").lower()
+            username = (u.get("username") or "").lower()
+            if full_name == name.lower() or username == name.lower():
+                return u.get("id")
+        return None
 
     def name(self) -> str:
         return "TaskTool"

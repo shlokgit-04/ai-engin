@@ -36,19 +36,19 @@ class BackendClient:
         self._base_url = (base_url or config.base_url).rstrip("/")
         self._timeout = timeout or config.timeout
         self._max_retries = max_retries or config.max_retries
-        self._client = httpx.AsyncClient(timeout=self._timeout)
+        self._client = httpx.AsyncClient(timeout=self._timeout, follow_redirects=True)
 
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self._request("GET", path, params=params)
+    async def get(self, path: str, params: dict[str, Any] | None = None, auth_token: str | None = None) -> dict[str, Any]:
+        return await self._request("GET", path, params=params, auth_token=auth_token)
 
-    async def post(self, path: str, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self._request("POST", path, body=json_body)
+    async def post(self, path: str, json_body: dict[str, Any] | None = None, auth_token: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        return await self._request("POST", path, params=params, body=json_body, auth_token=auth_token)
 
-    async def put(self, path: str, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self._request("PUT", path, body=json_body)
+    async def put(self, path: str, json_body: dict[str, Any] | None = None, auth_token: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        return await self._request("PUT", path, params=params, body=json_body, auth_token=auth_token)
 
-    async def delete(self, path: str) -> dict[str, Any]:
-        return await self._request("DELETE", path)
+    async def delete(self, path: str, auth_token: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        return await self._request("DELETE", path, params=params, auth_token=auth_token)
 
     async def _request(
         self,
@@ -56,9 +56,14 @@ class BackendClient:
         path: str,
         params: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
+        auth_token: str | None = None,
     ) -> dict[str, Any]:
         url = f"{self._base_url}{path}"
         last_exc: Exception | None = None
+
+        headers: dict[str, str] = {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
 
         for attempt in range(self._max_retries + 1):
             start = time.monotonic()
@@ -68,6 +73,7 @@ class BackendClient:
                     url=url,
                     params=params,
                     json=body,
+                    headers=headers if headers else None,
                 )
             except httpx.TimeoutException as exc:
                 logger.warning("Backend timeout", path=path, attempt=attempt)
@@ -121,7 +127,8 @@ class BackendClient:
                 )
 
             try:
-                return response.json()
+                raw = response.json()
+                return self._unwrap(raw)
             except (json.JSONDecodeError, ValueError) as exc:
                 raise BackendInvalidJSONError(
                     f"Invalid JSON in response: {exc}",
@@ -131,6 +138,13 @@ class BackendClient:
 
         # Should not reach here, but satisfy type-checker.
         raise last_exc  # type: ignore[misc]
+
+    @staticmethod
+    def _unwrap(body: Any) -> Any:
+        """Unwrap the backend's {success, message, data} envelope."""
+        if isinstance(body, dict) and "success" in body and "data" in body:
+            return body["data"] if body["data"] is not None else body
+        return body
 
     async def close(self) -> None:
         await self._client.aclose()

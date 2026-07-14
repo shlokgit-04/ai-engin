@@ -5,6 +5,7 @@ from typing import Any
 
 class ExecutionContext(BaseModel):
     message: str
+    auth_token: str | None = None
     user_id: str | None = None
     username: str | None = None
     role: str | None = None

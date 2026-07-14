@@ -5,12 +5,6 @@ from app.core.logging import logger
 from app.executive.priorities import PriorityEngine
 from app.executive.insights import BusinessInsights
 from app.integrations.backend.client import BackendClient
-from app.integrations.backend.models import (
-    DashboardResponse,
-    TaskListResponse,
-    EventListResponse,
-    NotificationListResponse,
-)
 
 
 BRIEFING_TEMPLATE = (
@@ -39,38 +33,33 @@ class ExecutiveBriefingService:
         self._priority_engine = priority_engine or PriorityEngine()
         self._insights_engine = insights_engine or BusinessInsights()
 
-    async def generate_briefing(self) -> str:
+    async def generate_briefing(self, auth_token: str | None = None) -> str:
         start = time.monotonic()
 
-        dashboard_data = await self._fetch_dashboard()
-        tasks_data = await self._fetch_tasks()
-        overdue_data = await self._fetch_overdue()
-        events_data = await self._fetch_events()
-        notifications_data = await self._fetch_notifications()
+        dashboard_data = await self._fetch_dashboard(auth_token)
+        tasks_data = await self._fetch_tasks(auth_token)
+        overdue_data = await self._fetch_overdue(auth_token)
+        events_data = await self._fetch_events(auth_token)
+        notifications_data = await self._fetch_notifications(auth_token)
 
         elapsed_api_ms = round((time.monotonic() - start) * 1000, 2)
 
-        tasks = tasks_data.get("tasks", [])
-        overdue = overdue_data.get("tasks", [])
-        events = events_data.get("events", [])
-        notifications = notifications_data.get("notifications", [])
-        dashboard = dashboard_data.get("data") or dashboard_data
+        tasks = tasks_data if isinstance(tasks_data, list) else []
+        overdue = overdue_data if isinstance(overdue_data, list) else []
+        events = events_data if isinstance(events_data, list) else []
+        notifications = notifications_data if isinstance(notifications_data, list) else []
+        dashboard = dashboard_data if isinstance(dashboard_data, dict) else {}
 
         pending_count = len(tasks)
         overdue_count = len(overdue)
         meeting_count = len(events)
 
-        unread = sum(1 for n in notifications if not n.get("read", True))
+        unread = sum(1 for n in notifications if not n.get("is_read", True))
         risk_level = "Low"
-        if isinstance(dashboard, dict):
-            risks = dashboard.get("risks")
-            if risks:
-                high = [r for r in risks if isinstance(r, dict) and r.get("level", "").lower() == "high"]
-                medium = [r for r in risks if isinstance(r, dict) and r.get("level", "").lower() == "medium"]
-                if high:
-                    risk_level = "High"
-                elif medium:
-                    risk_level = "Medium"
+        if overdue_count > 3:
+            risk_level = "High"
+        elif overdue_count > 0:
+            risk_level = "Medium"
 
         highest_priority = self._priority_engine.determine_priority(tasks, overdue, events, dashboard)
         insights = self._insights_engine.generate(tasks, overdue, events, notifications, dashboard)
@@ -102,27 +91,17 @@ class ExecutiveBriefingService:
         )
         return result
 
-    async def _fetch_dashboard(self) -> dict[str, Any]:
-        data = await self._client.get("/dashboard")
-        resp = DashboardResponse(**data)
-        return resp.model_dump()
+    async def _fetch_dashboard(self, auth_token: str | None = None) -> dict[str, Any]:
+        return await self._client.get("/api/v1/dashboard/summary", auth_token=auth_token)
 
-    async def _fetch_tasks(self) -> dict[str, Any]:
-        data = await self._client.get("/tasks")
-        resp = TaskListResponse(**data)
-        return {"tasks": [t.model_dump() for t in resp.tasks]}
+    async def _fetch_tasks(self, auth_token: str | None = None) -> list[dict[str, Any]]:
+        return await self._client.get("/api/v1/tasks", auth_token=auth_token)
 
-    async def _fetch_overdue(self) -> dict[str, Any]:
-        data = await self._client.get("/tasks/overdue")
-        resp = TaskListResponse(**data)
-        return {"tasks": [t.model_dump() for t in resp.tasks]}
+    async def _fetch_overdue(self, auth_token: str | None = None) -> list[dict[str, Any]]:
+        return await self._client.get("/api/v1/tasks/overdue", auth_token=auth_token)
 
-    async def _fetch_events(self) -> dict[str, Any]:
-        data = await self._client.get("/planner/today")
-        resp = EventListResponse(**data)
-        return {"events": [e.model_dump() for e in resp.events]}
+    async def _fetch_events(self, auth_token: str | None = None) -> list[dict[str, Any]]:
+        return await self._client.get("/api/v1/meetings", params={"filter": "today"}, auth_token=auth_token)
 
-    async def _fetch_notifications(self) -> dict[str, Any]:
-        data = await self._client.get("/notifications")
-        resp = NotificationListResponse(**data)
-        return {"notifications": [n.model_dump() for n in resp.notifications]}
+    async def _fetch_notifications(self, auth_token: str | None = None) -> list[dict[str, Any]]:
+        return await self._client.get("/api/v1/notifications", auth_token=auth_token)

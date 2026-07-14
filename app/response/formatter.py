@@ -113,16 +113,30 @@ class ResponseFormatter:
     # ── Planner ───────────────────────────────────────────────────────────
 
     def _format_add_meeting(self, data: dict[str, Any]) -> str:
-        return tpl.MEETING_SCHEDULED.format(
-            date=data.get("date", "Today"),
-            time=data.get("time", "TBD"),
-        )
+        title = data.get("title", "Meeting")
+        date = data.get("date", "Not scheduled")
+        time_str = data.get("time", "TBD")
+        parts = [f'"{title}" created successfully.']
+        if date and date.lower() not in ("not scheduled", "none"):
+            parts.append(f"📅 {date}")
+        if time_str and time_str.lower() not in ("not scheduled", "none", "tbd"):
+            parts.append(f"🕐 {time_str}")
+        return "\n".join(parts)
 
     def _format_cancel_meeting(self, data: dict[str, Any]) -> str:
-        return tpl.MEETING_CANCELLED
+        title = data.get("title", "the meeting")
+        return f'"{title}" has been deleted successfully.'
 
     def _format_reschedule_meeting(self, data: dict[str, Any]) -> str:
-        return tpl.MEETING_RESCHEDULED
+        title = data.get("title", "The meeting")
+        parts = [f'"{title}" has been rescheduled.']
+        date = data.get("date")
+        time_str = data.get("time")
+        if date:
+            parts.append(f"📅 {date}")
+        if time_str:
+            parts.append(f"🕐 {time_str}")
+        return "\n".join(parts)
 
     def _format_today_schedule(self, data: dict[str, Any]) -> str:
         events = data.get("events", [])
@@ -155,6 +169,316 @@ class ResponseFormatter:
 
     def _format_add_reminder(self, data: dict[str, Any]) -> str:
         return tpl.REMINDER_SET
+
+    def _format_upload_mom(self, data: dict[str, Any]) -> str:
+        return tpl.MOM_UPLOADED.format(meeting_id=data.get("meeting_id", ""))
+
+    def _format_extract_tasks_from_mom(self, data: dict[str, Any]) -> str:
+        tasks = data.get("tasks", [])
+        summary = data.get("mom_summary", "")
+        if tasks:
+            lines = [f"  • {t.get('title', t)}" for t in tasks]
+            return f"Tasks extracted from meeting #{data.get('meeting_id', '')}:\n\n" + "\n".join(lines)
+        return tpl.TASKS_EXTRACTED.format(
+            meeting_id=data.get("meeting_id", ""),
+            meeting_summary=summary or "No summary available.",
+        )
+
+    def _format_accept_meeting(self, data: dict[str, Any]) -> str:
+        return tpl.MEETING_INVITATION_ACCEPTED
+
+    def _format_decline_meeting(self, data: dict[str, Any]) -> str:
+        return tpl.MEETING_INVITATION_DECLINED
+
+    # ── Meeting Intelligence (new) ────────────────────────────────────────
+
+    def _format_show_meetings(self, data: dict[str, Any]) -> str:
+        events = data.get("events", [])
+        if not events:
+            return "You have no meetings at the moment."
+        lines = []
+        for e in events:
+            title = e.get("title", "Untitled")
+            date = e.get("date") or ""
+            time_str = e.get("time") or ""
+            parts = [f"  • {title}"]
+            if date and date.lower() not in ("not scheduled", "none", ""):
+                parts.append(f"    📅 {date}")
+            if time_str and time_str.lower() not in ("not scheduled", "none", "tbd", ""):
+                parts.append(f"    🕐 {time_str}")
+            lines.append("\n".join(parts))
+        return tpl.MEETINGS_LIST_HEADER.format(count=len(events), meeting_list="\n".join(lines))
+
+    def _format_today_meetings(self, data: dict[str, Any]) -> str:
+        events = data.get("events", [])
+        if not events:
+            return "No meetings scheduled for today."
+        lines = []
+        for e in events:
+            title = e.get("title", "Untitled")
+            time_str = e.get("time") or ""
+            parts = [f"  • {title}"]
+            if time_str and time_str.lower() not in ("not scheduled", "none", "tbd", ""):
+                parts.append(f"    🕐 {time_str}")
+            lines.append("\n".join(parts))
+        return tpl.MEETINGS_LIST_HEADER.format(count=len(events), meeting_list="\n".join(lines))
+
+    def _format_upcoming_meetings(self, data: dict[str, Any]) -> str:
+        events = data.get("events", [])
+        if not events:
+            return "No upcoming meetings."
+        lines = []
+        for e in events:
+            title = e.get("title", "Untitled")
+            date = e.get("date") or ""
+            time_str = e.get("time") or ""
+            parts = [f"  • {title}"]
+            if date and date.lower() not in ("not scheduled", "none", ""):
+                parts.append(f"    📅 {date}")
+            if time_str and time_str.lower() not in ("not scheduled", "none", "tbd", ""):
+                parts.append(f"    🕐 {time_str}")
+            lines.append("\n".join(parts))
+        return tpl.MEETINGS_LIST_HEADER.format(count=len(events), meeting_list="\n".join(lines))
+
+    def _format_show_meeting_timeline(self, data: dict[str, Any]) -> str:
+        timeline = data.get("timeline", [])
+        if not timeline:
+            return f"No timeline events recorded for meeting #{data.get('meeting_id', '')}."
+        lines = []
+        for t in timeline:
+            user = t.get("user_name") or t.get("user", "System")
+            desc = t.get("description", t.get("action", ""))
+            lines.append(f"  • {desc} ({user})")
+        return tpl.MEETING_TIMELINE_HEADER.format(
+            meeting_id=data.get("meeting_id", ""),
+            count=len(timeline),
+            timeline_list="\n".join(lines),
+        )
+
+    def _format_analyze_mom(self, data: dict[str, Any]) -> str:
+        def _parse_json_field(val):
+            if isinstance(val, str):
+                try:
+                    import json as _json
+                    return _json.loads(val)
+                except Exception:
+                    return []
+            if isinstance(val, list):
+                return val
+            return []
+
+        def _parse_json_str(val):
+            if isinstance(val, str):
+                try:
+                    import json as _json
+                    return _json.loads(val)
+                except Exception:
+                    return val
+            return val
+
+        decisions = _parse_json_field(data.get("decisions", []))
+        risks = _parse_json_field(data.get("risks", []))
+        followups = _parse_json_field(data.get("followups", []))
+        blockers = _parse_json_field(data.get("blockers", []))
+        exec_summary = _parse_json_str(data.get("executive_summary", "")) or "No executive summary available."
+
+        parts = [
+            f"Meeting #{data.get('meeting_id', '')} MOM Analysis\n",
+            f"Executive Summary:\n{exec_summary}\n",
+        ]
+        if decisions:
+            parts.append("Decisions:\n" + "\n".join(f"  • {d}" for d in decisions))
+        if risks:
+            parts.append("Risks:\n" + "\n".join(f"  • {r}" for r in risks))
+        if followups:
+            parts.append("Follow-ups:\n" + "\n".join(f"  • {f}" for f in followups))
+        if blockers:
+            parts.append("Blockers:\n" + "\n".join(f"  • {b}" for b in blockers))
+        return "\n\n".join(parts)
+
+    def _format_show_extracted_tasks(self, data: dict[str, Any]) -> str:
+        tasks = data.get("tasks", [])
+        if not tasks:
+            return f"No extracted tasks for meeting #{data.get('meeting_id', '')}."
+        lines = []
+        for t in tasks:
+            lines.append(tpl.EXTRACTED_TASKS_ITEM.format(
+                status=t.get("status", "pending"),
+                title=t.get("title", "Untitled"),
+                confidence=int(t.get("confidence", 0)),
+            ))
+        return tpl.EXTRACTED_TASKS_LIST_HEADER.format(
+            meeting_id=data.get("meeting_id", ""),
+            count=len(tasks),
+            task_list="\n".join(lines),
+        )
+
+    def _format_approve_extracted_tasks(self, data: dict[str, Any]) -> str:
+        return tpl.EXTRACTED_TASKS_APPROVED.format(
+            count=data.get("approved_count", 0),
+            meeting_id=data.get("meeting_id", ""),
+        )
+
+    def _format_reject_extracted_tasks(self, data: dict[str, Any]) -> str:
+        return tpl.EXTRACTED_TASKS_REJECTED.format(
+            count=data.get("rejected_count", 0),
+            meeting_id=data.get("meeting_id", ""),
+        )
+
+    def _format_who_accepted(self, data: dict[str, Any]) -> str:
+        accepted = data.get("accepted", [])
+        if not accepted:
+            return f"No one has accepted meeting #{data.get('meeting_id', '')} yet."
+        lines = "\n".join(f"  • {name}" for name in accepted)
+        return tpl.MEETING_ACCEPTED_LIST.format(
+            meeting_id=data.get("meeting_id", ""),
+            count=len(accepted),
+            names_list=lines,
+        )
+
+    def _format_who_declined(self, data: dict[str, Any]) -> str:
+        declined = data.get("declined", [])
+        if not declined:
+            return f"No one has declined meeting #{data.get('meeting_id', '')}."
+        lines = "\n".join(f"  • {name}" for name in declined)
+        return tpl.MEETING_DECLINED_LIST.format(
+            meeting_id=data.get("meeting_id", ""),
+            count=len(declined),
+            names_list=lines,
+        )
+
+    def _format_meeting_decisions(self, data: dict[str, Any]) -> str:
+        items = data.get("decisions", [])
+        if isinstance(items, str):
+            try:
+                import json as _json
+                items = _json.loads(items)
+            except Exception:
+                items = [items] if items else []
+        if not items:
+            return f"No decisions recorded for meeting #{data.get('meeting_id', '')}."
+        lines = "\n".join(f"  • {item}" for item in items)
+        return tpl.MEETING_DECISIONS_HEADER.format(
+            meeting_id=data.get("meeting_id", ""),
+            items_list=lines,
+        )
+
+    def _format_meeting_risks(self, data: dict[str, Any]) -> str:
+        items = data.get("risks", [])
+        if isinstance(items, str):
+            try:
+                import json as _json
+                items = _json.loads(items)
+            except Exception:
+                items = [items] if items else []
+        if not items:
+            return f"No risks identified for meeting #{data.get('meeting_id', '')}."
+        lines = "\n".join(f"  • {item}" for item in items)
+        return tpl.MEETING_RISKS_HEADER.format(
+            meeting_id=data.get("meeting_id", ""),
+            items_list=lines,
+        )
+
+    def _format_meeting_followups(self, data: dict[str, Any]) -> str:
+        items = data.get("followups", [])
+        if isinstance(items, str):
+            try:
+                import json as _json
+                items = _json.loads(items)
+            except Exception:
+                items = [items] if items else []
+        if not items:
+            return f"No follow-up items for meeting #{data.get('meeting_id', '')}."
+        lines = "\n".join(f"  • {item}" for item in items)
+        return tpl.MEETING_FOLLOWUPS_HEADER.format(
+            meeting_id=data.get("meeting_id", ""),
+            items_list=lines,
+        )
+
+    def _format_meeting_blockers(self, data: dict[str, Any]) -> str:
+        items = data.get("blockers", [])
+        if isinstance(items, str):
+            try:
+                import json as _json
+                items = _json.loads(items)
+            except Exception:
+                items = [items] if items else []
+        if not items:
+            return f"No blockers identified for meeting #{data.get('meeting_id', '')}."
+        lines = "\n".join(f"  • {item}" for item in items)
+        return tpl.MEETING_BLOCKERS_HEADER.format(
+            meeting_id=data.get("meeting_id", ""),
+            items_list=lines,
+        )
+
+    def _format_rename_meeting(self, data: dict[str, Any]) -> str:
+        title = data.get("title", "the meeting")
+        return f'Meeting renamed to "{title}" successfully.'
+
+    def _format_add_participant(self, data: dict[str, Any]) -> str:
+        participant = data.get("participant", "the user")
+        action = data.get("action", "added")
+        return f"{participant} has been {action} to the meeting."
+
+    def _format_remove_participant(self, data: dict[str, Any]) -> str:
+        participant = data.get("participant", "the user")
+        action = data.get("action", "removed")
+        return f"{participant} has been {action} from the meeting."
+
+    def _format_show_meeting_detail(self, data: dict[str, Any]) -> str:
+        title = data.get("title", "Untitled Meeting")
+        parts = [f"📋 {title}"]
+
+        date_val = data.get("date")
+        time_val = data.get("start_time")
+        end_val = data.get("end_time")
+        if date_val:
+            parts.append(f"📅 {date_val}")
+        elif time_val:
+            parts.append(f"🕐 {time_val}")
+        else:
+            parts.append("📅 Not scheduled")
+
+        location = data.get("location")
+        if location:
+            parts.append(f"📍 {location}")
+
+        link = data.get("meeting_link")
+        if link:
+            parts.append(f"🔗 {link}")
+
+        agenda = data.get("agenda")
+        if agenda:
+            parts.append(f"\nAgenda:\n{agenda}")
+
+        owner = data.get("owner_name")
+        if owner:
+            parts.append(f"\nHost: {owner}")
+
+        participants = data.get("participants", [])
+        if participants:
+            accepted = sum(1 for p in participants if p.get("status") == "accepted")
+            declined = sum(1 for p in participants if p.get("status") == "declined")
+            pending = sum(1 for p in participants if p.get("status") in ("pending", None))
+            names = [p.get("user_name", "Unknown") for p in participants]
+            parts.append(f"\nParticipants ({len(participants)}):\n" + "\n".join(f"  • {n}" for n in names))
+            status_parts = []
+            if accepted:
+                status_parts.append(f"{accepted} accepted")
+            if declined:
+                status_parts.append(f"{declined} declined")
+            if pending:
+                status_parts.append(f"{pending} pending")
+            if status_parts:
+                parts.append("Status: " + ", ".join(status_parts))
+
+        mom = data.get("mom_summary")
+        if mom:
+            parts.append("\n📝 MOM: Uploaded")
+        else:
+            parts.append("\n📝 MOM: Not uploaded")
+
+        return "\n".join(parts)
 
     # ── Notifications ─────────────────────────────────────────────────────
 

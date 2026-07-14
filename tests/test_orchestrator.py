@@ -9,6 +9,25 @@ from app.orchestrator.orchestrator import AIOrchestrator
 from app.orchestrator.pipeline import ExecutionPipeline, FEATURE_PLACEHOLDER
 from app.document_intelligence.pipeline import DocumentIntelligencePipeline
 from app.models.base import BaseLLM
+from app.models.providers.base import ProviderHealth
+from app.models.providers.manager import ProviderManager
+
+
+class _FakeProvider:
+    provider_name = "fake"
+    current_model = "fake-model"
+
+    async def generate(self, prompt, **kwargs):
+        return f"fake:{prompt}"
+
+    async def generate_stream(self, prompt, **kwargs):
+        yield f"fake:{prompt}"
+
+    async def health_check(self):
+        return ProviderHealth(healthy=True, provider="fake", message="ok")
+
+    def list_models(self):
+        return []
 
 
 def make_context(message: str) -> ExecutionContext:
@@ -53,7 +72,8 @@ def pipeline(
     ollama: RecordingLLM,
     knowledge: DocumentIntelligencePipeline,
 ) -> ExecutionPipeline:
-    return ExecutionPipeline(gemini=gemini, ollama=ollama, knowledge_pipeline=knowledge)
+    pm = ProviderManager(providers={"fake": _FakeProvider()}, default_provider="fake")
+    return ExecutionPipeline(provider_manager=pm, gemini=gemini, ollama=ollama, knowledge_pipeline=knowledge)
 
 
 @pytest.fixture
@@ -65,10 +85,10 @@ def orchestrator(pipeline: ExecutionPipeline) -> AIOrchestrator:
 def _mock_backend_client():
     """Prevent tools from making real HTTP calls."""
     mock_instance = AsyncMock()
-    mock_instance.get = AsyncMock(return_value={"status": "success", "message": "OK"})
-    mock_instance.post = AsyncMock(return_value={"status": "success", "message": "OK"})
-    mock_instance.put = AsyncMock(return_value={"status": "success", "message": "OK"})
-    mock_instance.delete = AsyncMock(return_value={"status": "success", "message": "OK"})
+    mock_instance.get = AsyncMock(return_value=[])
+    mock_instance.post = AsyncMock(return_value={"id": 1})
+    mock_instance.put = AsyncMock(return_value={"id": 1, "title": "Task", "status": "pending"})
+    mock_instance.delete = AsyncMock(return_value={"status": "success"})
 
     modules = [
         "app.integrations.backend.client",
@@ -156,13 +176,11 @@ class TestClassification:
 
 class TestRouting:
     @pytest.mark.asyncio
-    async def test_general_chat_routes_to_gemini(
-        self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM
+    async def test_general_chat_routes_through_provider_manager(
+        self, orchestrator: AIOrchestrator
     ):
         result = await orchestrator.route_request(make_context("Explain Python"))
-        assert gemini.was_called
-        assert not ollama.was_called
-        assert result == "gemini:Explain Python"
+        assert result == "fake:Explain Python"
 
     @pytest.mark.asyncio
     async def test_company_knowledge_routes_to_knowledge_pipeline(
@@ -215,8 +233,9 @@ class TestRouting:
     async def test_deadline_routes_to_tool(
         self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM, _mock_backend_client
     ):
-        _mock_backend_client.put.return_value = {"id": "t-1", "title": "Task", "due_date": "2026-07-15", "status": "pending", "priority": "normal", "assignee": None, "project_id": None}
-        result = await orchestrator.route_request(make_context("Set a deadline"))
+        _mock_backend_client.get.return_value = [{"id": 1, "title": "Task", "status": "pending"}]
+        _mock_backend_client.put.return_value = {"id": 1, "title": "Task", "due_date": "2026-07-15", "status": "pending", "priority": "normal", "assigned_to": None, "project_id": None}
+        result = await orchestrator.route_request(make_context("Change deadline Task to July 15"))
         assert "Deadline changed" in result
         assert not gemini.was_called
         assert not ollama.was_called

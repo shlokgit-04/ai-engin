@@ -1,5 +1,5 @@
 import time
-from typing import Any
+from typing import AsyncIterator
 
 from app.orchestrator.enums import RequestCategory, IntentType
 from app.orchestrator.classifier import Classifier
@@ -83,3 +83,24 @@ class AIOrchestrator:
             elapsed_ms=elapsed_ms,
         )
         return response
+
+    async def route_request_stream(
+        self,
+        context: ExecutionContext,
+        provider: str | None = None,
+        model: str | None = None,
+    ) -> AsyncIterator[str]:
+        category = self._classifier.classify(context.message)
+        intent = self._classifier.classify_intent(context.message)
+
+        if intent != IntentType.GENERAL_CHAT:
+            tool = self._tool_router.route(intent)
+            response = await tool.execute(context, intent)
+            yield response
+            return
+
+        if model and provider:
+            self._pipeline.set_provider_model(provider, model)
+
+        async for chunk in self._pipeline.execute_stream(category, context):
+            yield chunk
