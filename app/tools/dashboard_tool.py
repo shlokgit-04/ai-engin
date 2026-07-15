@@ -43,31 +43,31 @@ class DashboardTool(BaseTool):
 
     async def _route(self, context: ExecutionContext, intent: IntentType) -> str:
         start = time.monotonic()
-        data = await self._client.get("/dashboard")
+        data = await self._client.get("/dashboard/summary")
         resp = DashboardResponse(**data)
         dump = resp.model_dump()
 
         if intent == IntentType.FOCUS_TODAY:
             focus = resp.data.focus if resp.data else "No focus available"
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("DashboardTool executed", intent=intent.value, endpoint="GET /dashboard", elapsed_ms=elapsed)
+            logger.info("DashboardTool executed", intent=intent.value, endpoint="GET /dashboard/summary", elapsed_ms=elapsed)
             return self._formatter.format(intent, {"focus": focus})
 
         if intent == IntentType.EXECUTIVE_SUMMARY:
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("DashboardTool executed", intent=intent.value, endpoint="GET /dashboard", elapsed_ms=elapsed)
+            logger.info("DashboardTool executed", intent=intent.value, endpoint="GET /dashboard/summary", elapsed_ms=elapsed)
             return self._formatter.format(intent, dump.get("data", {}) | {"focus": resp.data.focus if resp.data else ""})
 
         if intent == IntentType.TODAY_PRIORITIES:
             priorities = resp.data.priorities if resp.data else []
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("DashboardTool executed", intent=intent.value, endpoint="GET /dashboard", elapsed_ms=elapsed)
+            logger.info("DashboardTool executed", intent=intent.value, endpoint="GET /dashboard/summary", elapsed_ms=elapsed)
             return self._formatter.format(intent, {"priorities": priorities})
 
         if intent == IntentType.BUSINESS_RISK:
             risks = resp.data.risks if resp.data else []
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("DashboardTool executed", intent=intent.value, endpoint="GET /dashboard", elapsed_ms=elapsed)
+            logger.info("DashboardTool executed", intent=intent.value, endpoint="GET /dashboard/summary", elapsed_ms=elapsed)
             return self._formatter.format(intent, {"risks": risks})
 
         return "I'm not sure how to handle that request."

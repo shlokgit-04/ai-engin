@@ -156,13 +156,165 @@ class ResponseFormatter:
     def _format_add_reminder(self, data: dict[str, Any]) -> str:
         return tpl.REMINDER_SET
 
+    # ── Meeting Intelligence ──────────────────────────────────────────────
+
+    def _format_show_meetings(self, data: dict[str, Any]) -> str:
+        meetings = data.get("meetings", [])
+        if not meetings:
+            return "You have no meetings at the moment."
+        lines = [tpl.MEETING_LIST_ITEM.format(**m) for m in meetings]
+        return tpl.MEETING_LIST_HEADER.format(
+            count=len(meetings),
+            meeting_list="\n".join(lines),
+        )
+
+    def _format_today_meetings(self, data: dict[str, Any]) -> str:
+        meetings = data.get("meetings", [])
+        if not meetings:
+            return "You have no meetings scheduled for today."
+        lines = [tpl.MEETING_LIST_ITEM.format(**m) for m in meetings]
+        return tpl.MEETING_LIST_HEADER.format(
+            count=len(meetings),
+            meeting_list="\n".join(lines),
+        )
+
+    def _format_upcoming_meetings(self, data: dict[str, Any]) -> str:
+        meetings = data.get("meetings", [])
+        if not meetings:
+            return "No upcoming meetings."
+        lines = [tpl.MEETING_LIST_ITEM.format(**m) for m in meetings]
+        return tpl.MEETING_LIST_HEADER.format(
+            count=len(meetings),
+            meeting_list="\n".join(lines),
+        )
+
+    def _format_show_meeting_detail(self, data: dict[str, Any]) -> str:
+        return tpl.MEETING_DETAIL.format(
+            title=data.get("title", "Meeting"),
+            id=data.get("id", "?"),
+            date=data.get("date", "Not set"),
+            time=data.get("start_time", "Not set"),
+            location=data.get("location", "Not set"),
+            agenda=data.get("agenda", "Not set"),
+            participants=data.get("participants", "None"),
+            mom=data.get("mom_summary", "Not uploaded"),
+        )
+
+    def _format_rename_meeting(self, data: dict[str, Any]) -> str:
+        return tpl.MEETING_RENAMED.format(
+            id=data.get("id", "?"),
+            new_name=data.get("new_name", "Meeting"),
+        )
+
+    def _format_add_participant(self, data: dict[str, Any]) -> str:
+        return tpl.MEETING_PARTICIPANT_ADDED.format(
+            user_name=data.get("user_name", "Participant"),
+            id=data.get("id", "?"),
+        )
+
+    def _format_remove_participant(self, data: dict[str, Any]) -> str:
+        return tpl.MEETING_PARTICIPANT_REMOVED.format(
+            user_name=data.get("user_name", "Participant"),
+            id=data.get("id", "?"),
+        )
+
+    def _format_accept_meeting(self, data: dict[str, Any]) -> str:
+        return tpl.MEETING_ACCEPTED.format(id=data.get("id", "?"))
+
+    def _format_decline_meeting(self, data: dict[str, Any]) -> str:
+        return tpl.MEETING_DECLINED.format(id=data.get("id", "?"))
+
+    def _format_who_accepted(self, data: dict[str, Any]) -> str:
+        names = data.get("names", "Nobody")
+        return tpl.MEETING_ACCEPTED_BY.format(
+            status="Accepted",
+            id=data.get("id", "?"),
+            names=names,
+        )
+
+    def _format_who_declined(self, data: dict[str, Any]) -> str:
+        names = data.get("names", "Nobody")
+        return tpl.MEETING_ACCEPTED_BY.format(
+            status="Declined",
+            id=data.get("id", "?"),
+            names=names,
+        )
+
+    def _format_upload_mom(self, data: dict[str, Any]) -> str:
+        return tpl.MEETING_MOM_UPLOADED.format(id=data.get("id", "?"))
+
+    def _format_analyze_mom(self, data: dict[str, Any]) -> str:
+        analysis_parts = []
+        for key in ("mom_executive_summary", "mom_decisions", "mom_risks", "mom_followups", "mom_blockers"):
+            value = data.get(key)
+            if value:
+                label = key.replace("mom_", "").replace("_", " ").title()
+                analysis_parts.append(f"**{label}:** {value}")
+        tasks = data.get("extracted_tasks", [])
+        if tasks:
+            analysis_parts.append(f"**{len(tasks)} task(s) extracted.**")
+        return tpl.MEETING_MOM_ANALYSIS.format(
+            id=data.get("id", "?"),
+            analysis="\n".join(analysis_parts) if analysis_parts else "No analysis data available.",
+        )
+
+    def _format_extract_tasks_from_mom(self, data: dict[str, Any]) -> str:
+        return self._format_analyze_mom(data)
+
+    def _format_show_extracted_tasks(self, data: dict[str, Any]) -> str:
+        tasks = data.get("tasks", [])
+        if not tasks:
+            return "No extracted tasks."
+        lines = [tpl.MEETING_EXTRACTED_TASK_ITEM.format(**t) for t in tasks]
+        return tpl.MEETING_EXTRACTED_TASKS_HEADER.format(
+            id=data.get("id", "?"),
+            task_list="\n".join(lines),
+        )
+
+    def _format_approve_extracted_tasks(self, data: dict[str, Any]) -> str:
+        return tpl.MEETING_TASKS_APPROVED.format(id=data.get("id", "?"))
+
+    def _format_reject_extracted_tasks(self, data: dict[str, Any]) -> str:
+        return tpl.MEETING_TASKS_REJECTED.format(id=data.get("id", "?"))
+
+    def _format_show_meeting_timeline(self, data: dict[str, Any]) -> str:
+        events = data.get("events", [])
+        if not events:
+            return "No timeline events."
+        lines = [tpl.MEETING_TIMELINE_ITEM.format(**e) for e in events]
+        return tpl.MEETING_TIMELINE_HEADER.format(
+            id=data.get("id", "?"),
+            events="\n".join(lines),
+        )
+
+    def _format_show_meeting_decisions(self, data: dict[str, Any]) -> str:
+        value = data.get("value", "No decisions recorded.")
+        return tpl.MEETING_MOM_FIELD.format(field="Decisions", id=data.get("id", "?"), value=value)
+
+    def _format_show_meeting_risks(self, data: dict[str, Any]) -> str:
+        value = data.get("value", "No risks recorded.")
+        return tpl.MEETING_MOM_FIELD.format(field="Risks", id=data.get("id", "?"), value=value)
+
+    def _format_show_meeting_followups(self, data: dict[str, Any]) -> str:
+        value = data.get("value", "No follow-ups recorded.")
+        return tpl.MEETING_MOM_FIELD.format(field="Follow-ups", id=data.get("id", "?"), value=value)
+
+    def _format_show_meeting_blockers(self, data: dict[str, Any]) -> str:
+        value = data.get("value", "No blockers recorded.")
+        return tpl.MEETING_MOM_FIELD.format(field="Blockers", id=data.get("id", "?"), value=value)
+
     # ── Notifications ─────────────────────────────────────────────────────
 
     def _format_show_notifications(self, data: dict[str, Any]) -> str:
         notifications = data.get("notifications", [])
         if not notifications:
             return "You have no new notifications."
-        lines = [tpl.NOTIFICATION_ITEM.format(**n) for n in notifications]
+        lines = []
+        for n in notifications:
+            title = n.get("title") or n.get("text") or ""
+            msg = n.get("message") or ""
+            text = f"{title}: {msg}" if msg else title
+            lines.append(f"  • {text}")
         return tpl.NOTIFICATIONS_HEADER.format(
             count=len(notifications),
             notification_list="\n".join(lines),

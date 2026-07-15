@@ -111,6 +111,57 @@ BUSINESS_RISK = "Risk Assessment\n\n{risk_list}"
 
 RISK_ITEM = "  • [{level}] {description}"
 
+# ── Meeting Intelligence ─────────────────────────────────────────────────
+
+MEETING_LIST_HEADER = "You have {count} meeting(s).\n\n{meeting_list}"
+
+MEETING_LIST_ITEM = "  • {title} (ID: {id}) — {date} {time}"
+
+MEETING_DETAIL = (
+    "**{title}** (ID: {id})\n"
+    "Date: {date}\n"
+    "Time: {time}\n"
+    "Location: {location}\n"
+    "Agenda: {agenda}\n"
+    "Participants: {participants}\n"
+    "MOM: {mom}"
+)
+
+MEETING_RENAMED = 'Meeting (ID: {id}) renamed to "{new_name}".'
+
+MEETING_PARTICIPANT_ADDED = "Participant {user_name} added to meeting (ID: {id})."
+
+MEETING_PARTICIPANT_REMOVED = "Participant {user_name} removed from meeting (ID: {id})."
+
+MEETING_ACCEPTED = "Meeting (ID: {id}) has been accepted."
+
+MEETING_DECLINED = "Meeting (ID: {id}) has been declined."
+
+MEETING_MOM_UPLOADED = "MOM uploaded for meeting (ID: {id})."
+
+MEETING_MOM_ANALYSIS = (
+    "MOM Analysis complete for meeting (ID: {id}).\n\n"
+    "{analysis}"
+)
+
+MEETING_TIMELINE_HEADER = "**Timeline for Meeting {id}:**\n\n{events}"
+
+MEETING_TIMELINE_ITEM = "- [{timestamp}] {action}: {description}"
+
+MEETING_EXTRACTED_TASKS_HEADER = "**Extracted Tasks for Meeting {id}:**\n\n{task_list}"
+
+MEETING_EXTRACTED_TASK_ITEM = "- [{status}] {title} (ID: {id}, confidence: {confidence}%)"
+
+MEETING_TASKS_APPROVED = "Task {id}: approved."
+
+MEETING_TASKS_REJECTED = "Task {id}: rejected."
+
+MEETING_MOM_FIELD = "**{field} for Meeting {id}:**\n{value}"
+
+MEETING_ACCEPTED_BY = "**{status} meeting {id}:** {names}"
+
+MEETING_NO_DATA = "No {resource} for meeting (ID: {id})."
+
 # ── Errors ────────────────────────────────────────────────────────────────
 
 ERROR_NOT_FOUND = "{resource} not found."

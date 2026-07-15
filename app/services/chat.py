@@ -1,3 +1,5 @@
+from typing import AsyncIterator
+
 from app.schemas.chat import ChatResponse
 from app.agents.chat_agent import ChatAgent
 from app.memory.base import BaseMemory
@@ -16,3 +18,8 @@ class ChatService:
             await self._memory.add("default", {"role": "user", "content": message})
             await self._memory.add("default", {"role": "assistant", "content": response})
         return ChatResponse(response=response)
+
+    async def process_message_stream(self, message: str) -> AsyncIterator[str]:
+        logger.debug("Processing stream message", message=message)
+        async for chunk in self._agent.run_stream(message):
+            yield chunk

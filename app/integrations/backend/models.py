@@ -4,36 +4,31 @@ from typing import Any
 
 # ── Shared ──────────────────────────────────────────────────────────────────
 
-class StatusResponse(BaseModel):
-    status: str
-    message: str
+class APIResponse(BaseModel):
+    success: bool = True
+    message: str = ""
+    data: Any = None
 
 
 # ── Projects ────────────────────────────────────────────────────────────────
 
 class Project(BaseModel):
-    id: str
+    id: int | str
     name: str
     status: str = "active"
     description: str | None = None
 
 
 class ProjectListResponse(BaseModel):
-    status: str
-    projects: list[Project]
-    message: str | None = None
-
-
-class ProjectStatusResponse(BaseModel):
-    status: str
-    project: str
-    project_status: str
+    success: bool = True
+    message: str = ""
+    data: list[Project] = []
 
 
 # ── Tasks ───────────────────────────────────────────────────────────────────
 
 class Task(BaseModel):
-    id: str
+    id: int | str
     title: str
     status: str = "pending"
     due_date: str | None = None
@@ -42,45 +37,41 @@ class Task(BaseModel):
 
 
 class TaskListResponse(BaseModel):
-    status: str
-    tasks: list[Task]
-    message: str | None = None
-
-
-# ── Planner / Events ────────────────────────────────────────────────────────
-
-class Event(BaseModel):
-    id: str
-    title: str
-    start: str
-    end: str | None = None
-    description: str | None = None
-
-
-class EventListResponse(BaseModel):
-    status: str
-    events: list[Event]
-    message: str | None = None
+    success: bool = True
+    message: str = ""
+    data: list[Task] = []
 
 
 # ── Notifications ───────────────────────────────────────────────────────────
 
 class Notification(BaseModel):
-    id: str
-    text: str
-    read: bool = False
+    id: int | str
+    title: str = ""
+    message: str = ""
+    type: str | None = None
+    is_read: bool = False
     created_at: str | None = None
 
 
 class NotificationListResponse(BaseModel):
-    status: str
-    notifications: list[Notification]
-    message: str | None = None
+    success: bool = True
+    message: str = ""
+    data: list[Notification] = []
 
 
 # ── Dashboard ───────────────────────────────────────────────────────────────
 
 class DashboardData(BaseModel):
+    activeProjects: int = 0
+    completedProjects: int = 0
+    todayTasks: int = 0
+    overdueTasks: int = 0
+    todayMeetings: int = 0
+    highPriorityTasks: int = 0
+    pendingInvitations: int = 0
+    meetingsNeedingMOM: int = 0
+    pendingApprovals: int = 0
+    upcomingDeadlines: int = 0
     focus: str | None = None
     priorities: list[dict[str, Any]] | None = None
     summary: str | None = None
@@ -88,6 +79,22 @@ class DashboardData(BaseModel):
 
 
 class DashboardResponse(BaseModel):
-    status: str
+    success: bool = True
+    message: str = ""
     data: DashboardData | None = None
-    message: str | None = None
+
+
+# ── Events / Planner ───────────────────────────────────────────────────────
+
+class Event(BaseModel):
+    id: int | str
+    title: str
+    start: str = ""
+    end: str | None = None
+    description: str | None = None
+
+
+class EventListResponse(BaseModel):
+    success: bool = True
+    message: str = ""
+    data: list[Event] = []

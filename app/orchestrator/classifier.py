@@ -103,16 +103,62 @@ class Classifier:
         ]):
             return IntentType.DAILY_BRIEFING
 
-        # --- Planner intents ---
-        if _triggered(lower, ["add meeting", "schedule meeting", "book meeting", "set up meeting", "schedule a meeting"]):
-            return IntentType.ADD_MEETING
-        if _triggered(lower, ["cancel meeting"]):
+        # --- Meeting Intelligence intents ---
+        if _triggered(lower, ["upload mom", "upload minutes", "upload meeting notes", "save mom", "save minutes"]):
+            return IntentType.UPLOAD_MOM
+        if _triggered(lower, ["analyze mom", "analyze minutes", "analyze meeting notes", "summarize mom", "summarize meeting", "analyze this meeting"]):
+            return IntentType.ANALYZE_MOM
+        if _triggered(lower, ["extract tasks", "pull tasks", "get tasks from mom", "tasks from meeting", "extract action items"]):
+            return IntentType.EXTRACT_TASKS_FROM_MOM
+        if _triggered(lower, ["approve task", "approve extracted", "approve meeting task", "accept task from meeting"]):
+            return IntentType.APPROVE_EXTRACTED_TASKS
+        if _triggered(lower, ["reject task", "reject extracted", "reject meeting task", "decline task from meeting"]):
+            return IntentType.REJECT_EXTRACTED_TASKS
+        if _triggered(lower, ["show extracted tasks", "extracted tasks", "pending tasks from meeting", "meeting tasks"]):
+            return IntentType.SHOW_EXTRACTED_TASKS
+        if _triggered(lower, ["who accepted", "who confirmed", "accepted the meeting", "meeting acceptances"]):
+            return IntentType.WHO_ACCEPTED
+        if _triggered(lower, ["who declined", "who rejected", "declined the meeting", "meeting declines"]):
+            return IntentType.WHO_DECLINED
+        if _triggered(lower, ["accept meeting", "accept invite", "accept invitation", "confirm attendance"]):
+            return IntentType.ACCEPT_MEETING
+        if _triggered(lower, ["decline meeting", "decline invite", "decline invitation", "reject meeting"]):
+            return IntentType.DECLINE_MEETING
+        if _triggered(lower, ["show meetings", "list meetings", "all meetings", "my meetings", "what meetings"]):
+            return IntentType.SHOW_MEETINGS
+        if _triggered(lower, ["today meetings", "today's meetings", "meetings today", "meetings for today"]):
+            return IntentType.TODAY_MEETINGS
+        if _triggered(lower, ["upcoming meetings", "next meetings", "future meetings", "meetings this week"]):
+            return IntentType.UPCOMING_MEETINGS
+        if _triggered(lower, ["meeting timeline", "meeting history", "meeting activity", "timeline for meeting"]):
+            return IntentType.SHOW_MEETING_TIMELINE
+        if _triggered(lower, ["meeting decisions", "what was decided", "decisions from meeting", "meeting outcome"]):
+            return IntentType.SHOW_MEETING_DECISIONS
+        if _triggered(lower, ["meeting risks", "risks from meeting", "meeting risk", "what risks"]):
+            return IntentType.SHOW_MEETING_RISKS
+        if _triggered(lower, ["meeting follow-ups", "follow-ups from meeting", "meeting followup", "follow up items"]):
+            return IntentType.SHOW_MEETING_FOLLOWUPS
+        if _triggered(lower, ["meeting blockers", "blockers from meeting", "blocked items", "what's blocking"]):
+            return IntentType.SHOW_MEETING_BLOCKERS
+
+        # --- Meeting CRUD (delete/remove MUST come before reschedule to prevent "remove" matching "move") ---
+        if _triggered(lower, ["delete meeting", "remove meeting", "cancel meeting"]):
             return IntentType.CANCEL_MEETING
         if _triggered(lower, ["reschedule meeting", "move meeting"]):
             return IntentType.RESCHEDULE_MEETING
+        if _triggered(lower, ["rename meeting"]):
+            return IntentType.RENAME_MEETING
+        if _regex_match(lower, [r"\badd\b.*\bto\b"]) and not _regex_match(lower, [r"\badd (meeting|task|project|member|member to project)\b"]):
+            return IntentType.ADD_PARTICIPANT
+        if _regex_match(lower, [r"\bremove\b.*\bfrom\b"]) and not _regex_match(lower, [r"\bremove (meeting|task|project|member|member from project)\b"]):
+            return IntentType.REMOVE_PARTICIPANT
+        if _triggered(lower, ["meeting details", "show meeting", "show participants", "meeting participants", "who's in meeting", "who is in meeting"]):
+            return IntentType.SHOW_MEETING_DETAIL
+        if _triggered(lower, ["create meeting", "create a meeting", "new meeting", "add meeting", "schedule meeting", "book meeting", "set up meeting", "schedule a meeting", "plan meeting", "plan a meeting", "organize meeting"]):
+            return IntentType.ADD_MEETING
         if _triggered(lower, ["today schedule", "today's schedule", "what today", "my day", "today agenda", "my schedule today", "schedule today"]):
             return IntentType.TODAY_SCHEDULE
-        if _triggered(lower, ["week schedule", "this week", "my week", "weekly agenda"]):
+        if _triggered(lower, ["week schedule", "weekly schedule", "this week", "my week", "weekly agenda"]):
             return IntentType.WEEK_SCHEDULE
         if _triggered(lower, ["add reminder", "set reminder", "create reminder", "remind me", "set a reminder"]):
             return IntentType.ADD_REMINDER
@@ -122,7 +168,7 @@ class Classifier:
             return IntentType.CREATE_NOTIFICATION
         if _triggered(lower, ["show notifications", "my notifications", "list notifications", "any notifications"]):
             return IntentType.SHOW_NOTIFICATIONS
-        if _triggered(lower, ["mark as read", "mark read", "mark notification"]):
+        if _triggered(lower, ["mark as read", "mark read", "mark notification", "mark all"]):
             return IntentType.MARK_AS_READ
 
         # --- Dashboard intents ---
@@ -140,3 +186,7 @@ class Classifier:
 
 def _triggered(text: str, phrases: list[str]) -> bool:
     return any(p in text for p in phrases)
+
+
+def _regex_match(text: str, patterns: list[str]) -> bool:
+    return any(re.search(p, text) for p in patterns)

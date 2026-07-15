@@ -110,19 +110,19 @@ class ExecutiveBriefingService:
     async def _fetch_tasks(self) -> dict[str, Any]:
         data = await self._client.get("/tasks")
         resp = TaskListResponse(**data)
-        return {"tasks": [t.model_dump() for t in resp.tasks]}
+        return {"tasks": [t.model_dump() for t in (resp.data or [])]}
 
     async def _fetch_overdue(self) -> dict[str, Any]:
         data = await self._client.get("/tasks/overdue")
         resp = TaskListResponse(**data)
-        return {"tasks": [t.model_dump() for t in resp.tasks]}
+        return {"tasks": [t.model_dump() for t in (resp.data or [])]}
 
     async def _fetch_events(self) -> dict[str, Any]:
         data = await self._client.get("/planner/today")
         resp = EventListResponse(**data)
-        return {"events": [e.model_dump() for e in resp.events]}
+        return {"events": [e.model_dump() for e in (resp.data or [])]}
 
     async def _fetch_notifications(self) -> dict[str, Any]:
         data = await self._client.get("/notifications")
         resp = NotificationListResponse(**data)
-        return {"notifications": [n.model_dump() for n in resp.notifications]}
+        return {"notifications": [n.model_dump() for n in (resp.data or [])]}

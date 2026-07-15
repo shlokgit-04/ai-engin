@@ -4,7 +4,7 @@ from app.tools.base import BaseTool
 from app.orchestrator.context import ExecutionContext
 from app.orchestrator.enums import IntentType
 from app.integrations.backend.client import BackendClient
-from app.integrations.backend.models import Task, TaskListResponse, StatusResponse
+from app.integrations.backend.models import Task, TaskListResponse, APIResponse
 from app.integrations.backend.exceptions import (
     BackendNotFoundError,
     BackendConnectionError,
@@ -61,7 +61,7 @@ class TaskTool(BaseTool):
             priority = extract_priority(context.message)
             due_date = extract_date(context.message) or "Not set"
             data = await self._client.post("/tasks", json_body={"title": title, "status": "pending"})
-            resp = StatusResponse(**data)
+            resp = APIResponse(**data)
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, {
                 "priority": priority.title(),
@@ -74,7 +74,7 @@ class TaskTool(BaseTool):
         if intent == IntentType.COMPLETE_TASK:
             tid = extract_task_id(context.message, context)
             data = await self._client.put(f"/tasks/{tid}", json_body={"status": "completed"})
-            task = Task(**data)
+            task = Task(**(data.get("data") or data))
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, task.model_dump())
             elapsed = round((time.monotonic() - start) * 1000, 2)
@@ -84,22 +84,24 @@ class TaskTool(BaseTool):
         if intent == IntentType.SHOW_TASKS:
             data = await self._client.get("/tasks")
             resp = TaskListResponse(**data)
+            tasks = resp.data or []
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, endpoint="GET /tasks", task_count=len(resp.tasks), elapsed_ms=elapsed)
-            return self._formatter.format(intent, {"tasks": [t.model_dump() for t in resp.tasks]})
+            logger.info("TaskTool executed", intent=intent.value, endpoint="GET /tasks", task_count=len(tasks), elapsed_ms=elapsed)
+            return self._formatter.format(intent, {"tasks": [t.model_dump() for t in tasks]})
 
         if intent == IntentType.SHOW_OVERDUE:
             data = await self._client.get("/tasks/overdue")
             resp = TaskListResponse(**data)
+            tasks = resp.data or []
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, endpoint="GET /tasks/overdue", task_count=len(resp.tasks), elapsed_ms=elapsed)
-            return self._formatter.format(intent, {"tasks": [t.model_dump() for t in resp.tasks]})
+            logger.info("TaskTool executed", intent=intent.value, endpoint="GET /tasks/overdue", task_count=len(tasks), elapsed_ms=elapsed)
+            return self._formatter.format(intent, {"tasks": [t.model_dump() for t in tasks]})
 
         if intent == IntentType.ASSIGN_TASK:
             tid = extract_task_id(context.message, context)
             assignee = context.metadata.get("assignee", "user")
             data = await self._client.put(f"/tasks/{tid}", json_body={"assignee": assignee})
-            task = Task(**data)
+            task = Task(**(data.get("data") or data))
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, {"assignee": task.assignee or assignee})
             elapsed = round((time.monotonic() - start) * 1000, 2)
@@ -113,7 +115,7 @@ class TaskTool(BaseTool):
             if not valid:
                 return err
             data = await self._client.put(f"/tasks/{tid}", json_body={"title": title})
-            task = Task(**data)
+            task = Task(**(data.get("data") or data))
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, task.model_dump())
             elapsed = round((time.monotonic() - start) * 1000, 2)
@@ -124,7 +126,7 @@ class TaskTool(BaseTool):
             tid = extract_task_id(context.message, context)
             due_date = extract_date(context.message) or "2026-07-15"
             data = await self._client.put(f"/tasks/{tid}", json_body={"due_date": due_date})
-            task = Task(**data)
+            task = Task(**(data.get("data") or data))
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, {"due_date": task.due_date or due_date})
             elapsed = round((time.monotonic() - start) * 1000, 2)
@@ -138,7 +140,7 @@ class TaskTool(BaseTool):
             if not valid:
                 return err
             data = await self._client.put(f"/tasks/{tid}", json_body={"priority": priority})
-            task = Task(**data)
+            task = Task(**(data.get("data") or data))
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, {"priority": task.priority or priority})
             elapsed = round((time.monotonic() - start) * 1000, 2)

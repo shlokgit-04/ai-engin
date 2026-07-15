@@ -1,5 +1,5 @@
 import time
-from typing import Any
+from typing import Any, AsyncIterator
 
 from app.orchestrator.enums import RequestCategory, IntentType
 from app.orchestrator.classifier import Classifier
@@ -61,6 +61,42 @@ class AIOrchestrator:
         start = time.monotonic()
         category = self._classifier.classify(context.message)
         intent = self._classifier.classify_intent(context.message)
+        response = await self._route_request(context, category, intent)
+        elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+        logger.info(
+            "Orchestrator routed request",
+            category=category.value,
+            intent=intent.value,
+            elapsed_ms=elapsed_ms,
+        )
+        return response
+
+    async def route_request_stream(self, context: ExecutionContext) -> AsyncIterator[str]:
+        category = self._classifier.classify(context.message)
+        intent = self._classifier.classify_intent(context.message)
+
+        if intent != IntentType.GENERAL_CHAT:
+            response = await self._route_request(context, category, intent)
+            for word in response.split(" "):
+                yield word + " "
+            return
+
+        if category == RequestCategory.GENERAL_CHAT:
+            if self._pipeline._provider_llm:
+                try:
+                    async for chunk in self._pipeline._provider_llm._manager.generate_stream(
+                        prompt=context.message,
+                    ):
+                        yield chunk
+                    return
+                except Exception as e:
+                    logger.warning("Provider stream failed, falling back to non-stream", error=str(e))
+
+        response = await self._route_request(context, category, intent)
+        yield response
+
+    async def _route_request(self, context: ExecutionContext, category: RequestCategory, intent: IntentType) -> str:
+        start = time.monotonic()
 
         if intent != IntentType.GENERAL_CHAT:
             tool = self._tool_router.route(intent)

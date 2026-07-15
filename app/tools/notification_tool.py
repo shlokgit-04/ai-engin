@@ -4,7 +4,7 @@ from app.tools.base import BaseTool
 from app.orchestrator.context import ExecutionContext
 from app.orchestrator.enums import IntentType
 from app.integrations.backend.client import BackendClient
-from app.integrations.backend.models import NotificationListResponse, StatusResponse
+from app.integrations.backend.models import NotificationListResponse, APIResponse
 from app.integrations.backend.exceptions import (
     BackendNotFoundError,
     BackendConnectionError,
@@ -55,13 +55,14 @@ class NotificationTool(BaseTool):
         if intent == IntentType.SHOW_NOTIFICATIONS:
             data = await self._client.get("/notifications")
             resp = NotificationListResponse(**data)
+            notifications = resp.data or []
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("NotificationTool executed", intent=intent.value, endpoint="GET /notifications", count=len(resp.notifications), elapsed_ms=elapsed)
-            return self._formatter.format(intent, {"notifications": [n.model_dump() for n in resp.notifications]})
+            logger.info("NotificationTool executed", intent=intent.value, endpoint="GET /notifications", count=len(notifications), elapsed_ms=elapsed)
+            return self._formatter.format(intent, {"notifications": [n.model_dump() for n in notifications]})
 
         if intent == IntentType.CREATE_NOTIFICATION:
             data = await self._client.post("/notifications", json_body={"text": context.message})
-            resp = StatusResponse(**data)
+            resp = APIResponse(**data)
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, resp.model_dump())
             elapsed = round((time.monotonic() - start) * 1000, 2)
@@ -73,7 +74,7 @@ class NotificationTool(BaseTool):
             if not nid:
                 return "I couldn't determine which notification you want to mark as read."
             data = await self._client.put(f"/notifications/{nid}/read")
-            resp = StatusResponse(**data)
+            resp = APIResponse(**data)
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, resp.model_dump())
             elapsed = round((time.monotonic() - start) * 1000, 2)

@@ -71,9 +71,10 @@ class ProjectTool(BaseTool):
         if intent == IntentType.SHOW_PROJECTS:
             data = await self._client.get("/projects")
             resp = ProjectListResponse(**data)
+            projects = resp.data or []
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("ProjectTool executed", intent=intent.value, endpoint="GET /projects", project_count=len(resp.projects), elapsed_ms=elapsed)
-            return self._formatter.format(intent, {"projects": [p.model_dump() for p in resp.projects]})
+            logger.info("ProjectTool executed", intent=intent.value, endpoint="GET /projects", project_count=len(projects), elapsed_ms=elapsed)
+            return self._formatter.format(intent, {"projects": [p.model_dump() for p in projects]})
 
         if intent == IntentType.SHOW_PROJECT_STATUS:
             pid = context.project_id or "default"

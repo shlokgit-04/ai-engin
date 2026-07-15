@@ -1,7 +1,12 @@
 from app.core.config import settings
 from app.core.exceptions import ConfigurationError
+from app.core.logging import logger
 from app.models.gemini import GeminiClient
 from app.models.ollama import OllamaClient
+from app.models.providers.openrouter import OpenRouterProvider
+from app.models.providers.ollama_provider import OllamaProvider
+from app.models.providers.manager import ProviderManager
+from app.models.provider_manager_llm import ProviderManagerLLM
 from app.orchestrator.orchestrator import AIOrchestrator
 from app.orchestrator.pipeline import ExecutionPipeline
 from app.orchestrator.enums import RequestCategory
@@ -35,8 +40,44 @@ from app.tools.executive_tool import ExecutiveTool
 from app.integrations.backend.client import BackendClient
 
 
+_provider_manager_instance: ProviderManager | None = None
+
+
 def get_backend_client() -> BackendClient:
     return BackendClient()
+
+
+def get_provider_manager() -> ProviderManager:
+    global _provider_manager_instance
+    if _provider_manager_instance is not None:
+        return _provider_manager_instance
+
+    providers: dict = {}
+
+    openrouter_keys = settings.openrouter_keys
+    if openrouter_keys:
+        try:
+            providers["openrouter"] = OpenRouterProvider(
+                api_keys=openrouter_keys,
+                model=settings.openrouter_model,
+            )
+        except Exception as e:
+            logger.warning("Failed to initialize OpenRouter provider", error=str(e))
+
+    try:
+        providers["ollama"] = OllamaProvider(
+            base_url=settings.ollama_base_url,
+            model=settings.ollama_model,
+        )
+    except Exception as e:
+        logger.warning("Failed to initialize Ollama provider", error=str(e))
+
+    default = settings.default_provider if settings.default_provider in providers else next(iter(providers), None)
+    if not providers:
+        raise ConfigurationError("No AI providers could be configured.")
+
+    _provider_manager_instance = ProviderManager(providers=providers, default_provider=default)
+    return _provider_manager_instance
 
 
 def get_gemini_client() -> GeminiClient:
@@ -62,10 +103,18 @@ def get_knowledge_pipeline() -> DocumentIntelligencePipeline:
 
 
 def get_execution_pipeline() -> ExecutionPipeline:
+    provider_llm = None
+    try:
+        manager = get_provider_manager()
+        provider_llm = ProviderManagerLLM(manager)
+    except Exception as e:
+        logger.warning("Could not initialize ProviderManager for pipeline", error=str(e))
+
     return ExecutionPipeline(
         gemini=get_gemini_client(),
         ollama=get_ollama_client(),
         knowledge_pipeline=get_knowledge_pipeline(),
+        provider_llm=provider_llm,
     )
 
 

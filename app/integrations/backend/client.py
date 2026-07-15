@@ -36,19 +36,19 @@ class BackendClient:
         self._base_url = (base_url or config.base_url).rstrip("/")
         self._timeout = timeout or config.timeout
         self._max_retries = max_retries or config.max_retries
-        self._client = httpx.AsyncClient(timeout=self._timeout)
+        self._client = httpx.AsyncClient(timeout=self._timeout, follow_redirects=True)
 
     async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         return await self._request("GET", path, params=params)
 
-    async def post(self, path: str, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self._request("POST", path, body=json_body)
+    async def post(self, path: str, json_body: dict[str, Any] | None = None, auth_token: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        return await self._request("POST", path, body=json_body, params=params)
 
-    async def put(self, path: str, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self._request("PUT", path, body=json_body)
+    async def put(self, path: str, json_body: dict[str, Any] | None = None, auth_token: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        return await self._request("PUT", path, body=json_body, params=params)
 
-    async def delete(self, path: str) -> dict[str, Any]:
-        return await self._request("DELETE", path)
+    async def delete(self, path: str, auth_token: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        return await self._request("DELETE", path, params=params)
 
     async def _request(
         self,
