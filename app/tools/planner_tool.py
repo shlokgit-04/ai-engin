@@ -1,5 +1,6 @@
 import time
 import re
+import os
 
 import httpx
 
@@ -11,11 +12,12 @@ from app.executive.params import extract_event_title, extract_date, extract_time
 from app.executive.validation import validate_not_empty
 from app.executive.suggestions import get_suggestion
 from app.core.logging import logger
+from app.core.config import settings
 
 
-_MEETING_BASE = "http://localhost:8000"
-_AUTH_EMAIL = "vincent@nurofin.com"
-_AUTH_PASSWORD = "qwerty"
+_MEETING_BASE = os.getenv("BACKEND_BASE_URL", settings.backend_base_url).replace("/api/v1", "")
+_AUTH_EMAIL = os.getenv("BACKEND_ADMIN_EMAIL", "vincent@nurofin.com")
+_AUTH_PASSWORD = os.getenv("BACKEND_ADMIN_PASSWORD", "qwerty")
 
 
 class _MeetingClient:
