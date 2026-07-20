@@ -64,6 +64,18 @@ class ResponseFormatter:
     def _format_rename_project(self, data: dict[str, Any]) -> str:
         return tpl.PROJECT_RENAMED.format(name=data.get("name", "Project"))
 
+    def _format_assign_member(self, data: dict[str, Any]) -> str:
+        return tpl.PROJECT_MEMBER_ADDED.format(
+            user_name=data.get("user_name", "Member"),
+            project_name=data.get("project_name", "Project"),
+        )
+
+    def _format_remove_member(self, data: dict[str, Any]) -> str:
+        return tpl.PROJECT_MEMBER_REMOVED.format(
+            user_name=data.get("user_name", "Member"),
+            project_name=data.get("project_name", "Project"),
+        )
+
     # ── Tasks ─────────────────────────────────────────────────────────────
 
     def _format_create_task(self, data: dict[str, Any]) -> str:
@@ -339,12 +351,13 @@ class ResponseFormatter:
         greeting = "Morning" if hour < 12 else "Afternoon" if hour < 18 else "Evening"
         return tpl.EXECUTIVE_SUMMARY.format(
             greeting=greeting,
-            project_count=data.get("project_count", data.get("active_projects", 0)),
-            task_count=data.get("task_count", data.get("pending_tasks", 0)),
-            overdue_count=data.get("overdue_count", data.get("overdue_tasks", 0)),
-            meeting_count=data.get("meeting_count", data.get("meetings_today", 0)),
-            risk_level=data.get("risk_level", data.get("business_risk", "Low")),
-            top_priority=data.get("top_priority", data.get("focus", "No priority set.")),
+            project_count=data.get("active_projects", 0),
+            total_tasks=data.get("total_tasks", 0),
+            completed_tasks=data.get("completed_tasks", 0),
+            overdue_count=data.get("overdue_tasks", 0),
+            meeting_count=data.get("meetings_today", 0),
+            risk_level=data.get("business_risk", "Low"),
+            top_priority=data.get("focus", "No priority set."),
         )
 
     def _format_today_priorities(self, data: dict[str, Any]) -> str:

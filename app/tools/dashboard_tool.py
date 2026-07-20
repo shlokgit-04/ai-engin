@@ -45,10 +45,23 @@ class DashboardTool(BaseTool):
         start = time.monotonic()
         data = await self._client.get("/dashboard/summary")
         resp = DashboardResponse(**data)
-        dump = resp.model_dump()
+        d = resp.data
 
         if intent == IntentType.FOCUS_TODAY:
-            focus = resp.data.focus if resp.data else "No focus available"
+            if not d:
+                return self._formatter.format(intent, {"focus": "No dashboard data available."})
+            focus_parts = []
+            if d.activeProjects:
+                focus_parts.append(f"{d.activeProjects} active project(s)")
+            if d.todayTasks:
+                focus_parts.append(f"{d.todayTasks} task(s) due today")
+            if d.overdueTasks:
+                focus_parts.append(f"{d.overdueTasks} overdue task(s)")
+            if d.todayMeetings:
+                focus_parts.append(f"{d.todayMeetings} meeting(s) today")
+            if d.highPriorityTasks:
+                focus_parts.append(f"{d.highPriorityTasks} high-priority task(s)")
+            focus = ", ".join(focus_parts) if focus_parts else "No urgent items today."
             elapsed = round((time.monotonic() - start) * 1000, 2)
             logger.info("DashboardTool executed", intent=intent.value, endpoint="GET /dashboard/summary", elapsed_ms=elapsed)
             return self._formatter.format(intent, {"focus": focus})
@@ -56,16 +69,49 @@ class DashboardTool(BaseTool):
         if intent == IntentType.EXECUTIVE_SUMMARY:
             elapsed = round((time.monotonic() - start) * 1000, 2)
             logger.info("DashboardTool executed", intent=intent.value, endpoint="GET /dashboard/summary", elapsed_ms=elapsed)
-            return self._formatter.format(intent, dump.get("data", {}) | {"focus": resp.data.focus if resp.data else ""})
+            return self._formatter.format(intent, {
+                "active_projects": d.activeProjects if d else 0,
+                "completed_projects": d.completedProjects if d else 0,
+                "total_tasks": d.totalTasks if d else 0,
+                "completed_tasks": d.completedTasks if d else 0,
+                "overdue_tasks": d.overdueTasks if d else 0,
+                "meetings_today": d.todayMeetings if d else 0,
+                "high_priority": d.highPriorityTasks if d else 0,
+                "upcoming_deadlines": d.upcomingDeadlines if d else 0,
+                "business_risk": "High" if (d and d.overdueTasks > 3) else "Medium" if (d and d.overdueTasks > 0) else "Low",
+                "focus": f"{d.activeProjects} active projects, {d.totalTasks - d.completedTasks if d else 0} tasks remaining" if d else "",
+            })
 
         if intent == IntentType.TODAY_PRIORITIES:
-            priorities = resp.data.priorities if resp.data else []
+            priorities = []
+            if d:
+                if d.highPriorityTasks:
+                    priorities.append({"title": f"{d.highPriorityTasks} high-priority task(s) need attention"})
+                if d.overdueTasks:
+                    priorities.append({"title": f"{d.overdueTasks} overdue task(s) require immediate action"})
+                if d.todayTasks:
+                    priorities.append({"title": f"{d.todayTasks} task(s) due today"})
+                if d.todayMeetings:
+                    priorities.append({"title": f"{d.todayMeetings} meeting(s) scheduled today"})
+                if d.pendingApprovals:
+                    priorities.append({"title": f"{d.pendingApprovals} extracted task(s) awaiting approval"})
             elapsed = round((time.monotonic() - start) * 1000, 2)
             logger.info("DashboardTool executed", intent=intent.value, endpoint="GET /dashboard/summary", elapsed_ms=elapsed)
             return self._formatter.format(intent, {"priorities": priorities})
 
         if intent == IntentType.BUSINESS_RISK:
-            risks = resp.data.risks if resp.data else []
+            risks = []
+            if d:
+                if d.overdueTasks > 3:
+                    risks.append({"level": "High", "description": f"{d.overdueTasks} overdue tasks — project timelines at risk"})
+                elif d.overdueTasks > 0:
+                    risks.append({"level": "Medium", "description": f"{d.overdueTasks} overdue task(s) need attention"})
+                if d.highPriorityTasks > 5:
+                    risks.append({"level": "High", "description": f"{d.highPriorityTasks} high-priority tasks — workload concern"})
+                if d.meetingsNeedingMOM > 3:
+                    risks.append({"level": "Medium", "description": f"{d.meetingsNeedingMOM} meeting(s) missing minutes of meeting"})
+                if d.upcomingDeadlines > 5:
+                    risks.append({"level": "Medium", "description": f"{d.upcomingDeadlines} tasks due in the next 7 days"})
             elapsed = round((time.monotonic() - start) * 1000, 2)
             logger.info("DashboardTool executed", intent=intent.value, endpoint="GET /dashboard/summary", elapsed_ms=elapsed)
             return self._formatter.format(intent, {"risks": risks})

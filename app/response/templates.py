@@ -16,6 +16,10 @@ PROJECT_DELETED = 'Project "{name}" has been deleted successfully.'
 
 PROJECT_RENAMED = 'Project renamed to "{name}" successfully.'
 
+PROJECT_MEMBER_ADDED = 'Member "{user_name}" added to project (ID: {project_name}).'
+
+PROJECT_MEMBER_REMOVED = 'Member "{user_name}" removed from project (ID: {project_name}).'
+
 PROJECT_LIST_HEADER = "You have {count} project(s).\n\n{project_list}"
 
 PROJECT_LIST_ITEM = "  • {name} ({status})"
@@ -95,7 +99,8 @@ EXECUTIVE_SUMMARY = (
     "Good {greeting}.\n\n"
     "Today's Executive Brief\n\n"
     "  • Active Projects: {project_count}\n"
-    "  • Pending Tasks: {task_count}\n"
+    "  • Total Tasks: {total_tasks}\n"
+    "  • Completed Tasks: {completed_tasks}\n"
     "  • Overdue Tasks: {overdue_count}\n"
     "  • Meetings Today: {meeting_count}\n"
     "  • Business Risk: {risk_level}\n\n"

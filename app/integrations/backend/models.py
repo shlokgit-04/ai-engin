@@ -64,6 +64,8 @@ class NotificationListResponse(BaseModel):
 class DashboardData(BaseModel):
     activeProjects: int = 0
     completedProjects: int = 0
+    totalTasks: int = 0
+    completedTasks: int = 0
     todayTasks: int = 0
     overdueTasks: int = 0
     todayMeetings: int = 0
@@ -72,10 +74,6 @@ class DashboardData(BaseModel):
     meetingsNeedingMOM: int = 0
     pendingApprovals: int = 0
     upcomingDeadlines: int = 0
-    focus: str | None = None
-    priorities: list[dict[str, Any]] | None = None
-    summary: str | None = None
-    risks: list[dict[str, Any]] | None = None
 
 
 class DashboardResponse(BaseModel):

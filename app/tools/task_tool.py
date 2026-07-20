@@ -60,7 +60,10 @@ class TaskTool(BaseTool):
                 return err
             priority = extract_priority(context.message)
             due_date = extract_date(context.message) or "Not set"
-            data = await self._client.post("/tasks", json_body={"title": title, "status": "todo"})
+            task_body = {"title": title, "status": "todo"}
+            if context.project_id:
+                task_body["project_id"] = int(context.project_id)
+            data = await self._client.post("/tasks", json_body=task_body)
             resp = APIResponse(**data)
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, {
