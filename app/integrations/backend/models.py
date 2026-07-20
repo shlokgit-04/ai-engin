@@ -96,3 +96,24 @@ class EventListResponse(BaseModel):
     success: bool = True
     message: str = ""
     data: list[Event] = []
+
+
+# ── Meetings ─────────────────────────────────────────────────────────────
+
+class Meeting(BaseModel):
+    id: int | str
+    title: str
+    date: str = ""
+    start_time: str = ""
+    end_time: str | None = None
+    status: str = "scheduled"
+    analysis_status: str | None = None
+    transcript: str | None = None
+    ai_summary: str | None = None
+    minutes_of_meeting: str | None = None
+
+
+class MeetingListResponse(BaseModel):
+    success: bool = True
+    message: str = ""
+    data: list[Meeting] = []
