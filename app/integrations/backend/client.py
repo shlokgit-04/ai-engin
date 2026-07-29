@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from typing import Any
 
@@ -17,13 +18,18 @@ from app.integrations.backend.exceptions import (
 )
 
 
+_BACKEND_AUTH_EMAIL = os.getenv("BACKEND_ADMIN_EMAIL", "vincent@nurofin.com")
+_BACKEND_AUTH_PASSWORD = os.getenv("BACKEND_ADMIN_PASSWORD", "qwerty")
+
+
 class BackendClient:
     """Reusable async HTTP client for the Nurofin backend.
 
     Uses ``httpx.AsyncClient`` under the hood.  Exposes convenience
     ``GET`` / ``POST`` / ``PUT`` / ``DELETE`` methods that all go
     through a single ``_request`` funnel for logging, error mapping,
-    and retry logic.
+    and retry logic.  Automatically authenticates via the backend's
+    ``/auth/login`` endpoint using the configured admin credentials.
     """
 
     def __init__(
@@ -34,9 +40,28 @@ class BackendClient:
     ) -> None:
         config = BackendConfig()
         self._base_url = (base_url or config.base_url).rstrip("/")
+        self._api_base = self._base_url.replace("/api/v1", "").rstrip("/")
         self._timeout = timeout or config.timeout
         self._max_retries = max_retries or config.max_retries
         self._client = httpx.AsyncClient(timeout=self._timeout, follow_redirects=True)
+        self._token: str | None = None
+
+    async def _ensure_auth(self) -> str:
+        if self._token:
+            return self._token
+        resp = await self._client.post(
+            f"{self._api_base}/api/v1/auth/login",
+            data={"username": _BACKEND_AUTH_EMAIL, "password": _BACKEND_AUTH_PASSWORD},
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        self._token = payload.get("data", {}).get("access_token") or payload.get("access_token")
+        return self._token
+
+    def _headers(self) -> dict[str, str]:
+        if self._token:
+            return {"Authorization": f"Bearer {self._token}"}
+        return {}
 
     async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         return await self._request("GET", path, params=params)
@@ -63,9 +88,11 @@ class BackendClient:
         for attempt in range(self._max_retries + 1):
             start = time.monotonic()
             try:
+                token = await self._ensure_auth()
                 response = await self._client.request(
                     method=method,
                     url=url,
+                    headers={"Authorization": f"Bearer {token}"},
                     params=params,
                     json=body,
                 )

@@ -102,13 +102,29 @@ class TaskTool(BaseTool):
 
         if intent == IntentType.ASSIGN_TASK:
             tid = extract_task_id(context.message, context)
-            assignee = context.metadata.get("assignee", "user")
-            data = await self._client.put(f"/tasks/{tid}", json_body={"assignee": assignee})
+            assignee_str = context.metadata.get("assignee", "").strip()
+            if not assignee_str:
+                assignee_str = assignee_str
+            assigned_to_id = None
+            if assignee_str and assignee_str != "user":
+                try:
+                    users_data = await self._client.get("/users")
+                    users_list = users_data.get("data", [])
+                    for u in users_list:
+                        if assignee_str.lower() in (u.get("full_name", "") or "").lower() or assignee_str.lower() in (u.get("email", "") or "").lower():
+                            assigned_to_id = u.get("id")
+                            break
+                except Exception:
+                    pass
+            body = {}
+            if assigned_to_id:
+                body["assigned_to_id"] = assigned_to_id
+            data = await self._client.put(f"/tasks/{tid}", json_body=body)
             task = Task(**(data.get("data") or data))
             suggestion = get_suggestion(intent.value)
-            result = self._formatter.format(intent, {"assignee": task.assignee or assignee})
+            result = self._formatter.format(intent, {"assignee": assignee_str or "assigned"})
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, task_id=tid, assignee=assignee, endpoint=f"PUT /tasks/{tid}", elapsed_ms=elapsed)
+            logger.info("TaskTool executed", intent=intent.value, task_id=tid, assignee=assignee_str, endpoint=f"PUT /tasks/{tid}", elapsed_ms=elapsed)
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.UPDATE_TASK:
