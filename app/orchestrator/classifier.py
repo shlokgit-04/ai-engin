@@ -28,6 +28,9 @@ _COMPANY_KEYWORDS = {
     "salary", "compensation", "benefits", "insurance",
     "audit", "compliance", "regulation", "approval",
     "submission", "nuro", "mou", "confidential",
+    "search knowledge", "knowledge base", "knowledge search",
+    "find in knowledge", "query knowledge", "look up knowledge",
+    "dashboard", "overview",
 }
 
 
@@ -69,7 +72,7 @@ class Classifier:
             return IntentType.SHOW_PROJECTS
         if _triggered(lower, ["project status", "status of project"]):
             return IntentType.SHOW_PROJECT_STATUS
-        if _triggered(lower, ["assign member", "add member to project"]):
+        if _triggered(lower, ["assign member", "add member to project", "add member", "add a member", "add members", "assign a member"]):
             return IntentType.ASSIGN_MEMBER
         if _triggered(lower, ["remove member", "remove from project"]):
             return IntentType.REMOVE_MEMBER
@@ -78,6 +81,8 @@ class Classifier:
         if _triggered(lower, ["create task", "new task", "add task", "create a task"]):
             return IntentType.CREATE_TASK
         if _triggered(lower, ["assign task"]):
+            return IntentType.ASSIGN_TASK
+        if _regex_match(lower, [r"assign\s+(?:the\s+)?task\s+(?:to\s+)?\S+", r"assign\s+to\s+\S+"]):
             return IntentType.ASSIGN_TASK
         if _triggered(lower, ["update task"]):
             return IntentType.UPDATE_TASK

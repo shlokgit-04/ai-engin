@@ -34,6 +34,17 @@ def extract_rename_target(message: str) -> str:
     return "Renamed"
 
 
+def extract_task_update_title(message: str, default: str = "Untitled Task") -> str:
+    for prefix in ("update task", "rename task"):
+        if prefix in message.lower():
+            idx = message.lower().index(prefix) + len(prefix)
+            rest = message[idx:].strip(".,!? ")
+            if " to " in rest.lower():
+                rest = rest[rest.lower().index(" to ") + 4:].strip()
+            return rest or default
+    return default
+
+
 def extract_task_title(message: str, default: str = "Untitled Task") -> str:
     for prefix in ("create task", "new task", "add task", "create a task"):
         if prefix in message.lower():
@@ -57,7 +68,7 @@ def extract_task_id(message: str, context: ExecutionContext | None = None) -> st
     for i, w in enumerate(parts):
         if w.lower() in ("task", "tasks") and i + 1 < len(parts):
             c = parts[i + 1].strip(".,!?#")
-            if c and not c.startswith(("status", "named", "called", "for")):
+            if c and not c.startswith(("status", "named", "called", "for", "to", "from", "the", "a", "an", "in", "on", "at", "with", "by")):
                 return c
     return "default"
 

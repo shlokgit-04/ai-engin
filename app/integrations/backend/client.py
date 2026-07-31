@@ -53,9 +53,30 @@ class BackendClient:
             f"{self._api_base}/api/v1/auth/login",
             data={"username": _BACKEND_AUTH_EMAIL, "password": _BACKEND_AUTH_PASSWORD},
         )
-        resp.raise_for_status()
-        payload = resp.json()
-        self._token = payload.get("data", {}).get("access_token") or payload.get("access_token")
+        if resp.status_code >= 400:
+            raise BackendClientError(
+                f"Authentication failed: {resp.status_code} {resp.text}",
+                status_code=resp.status_code,
+                response_body=resp.text,
+            )
+        try:
+            payload = resp.json()
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise BackendInvalidJSONError(
+                f"Invalid JSON in auth response: {exc}",
+                status_code=resp.status_code,
+                response_body=resp.text,
+            ) from exc
+        self._token = (
+            (payload.get("data") or {}).get("access_token")
+            or payload.get("access_token")
+        )
+        if not self._token:
+            raise BackendClientError(
+                "Authentication failed: no access token in response",
+                status_code=resp.status_code,
+                response_body=resp.text,
+            )
         return self._token
 
     def _headers(self) -> dict[str, str]:

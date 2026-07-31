@@ -87,7 +87,7 @@ NOTIFICATION_CREATED = "Notification created successfully."
 
 NOTIFICATION_MARKED_READ = "Notification marked as read."
 
-NOTIFICATIONS_HEADER = "You have {count} unread notification(s).\n\n{notification_list}"
+NOTIFICATIONS_HEADER = "You have {count} notification(s).\n\n{notification_list}"
 
 NOTIFICATION_ITEM = "• {text}"
 

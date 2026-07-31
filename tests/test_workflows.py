@@ -41,16 +41,15 @@ _CLASSIFIER = Classifier()
 @pytest.fixture(autouse=True)
 def _mock_backend_client():
     mock_instance = AsyncMock()
-    mock_instance.get = AsyncMock(return_value={"status": "success", "message": "OK"})
-    mock_instance.post = AsyncMock(return_value={"status": "success", "message": "OK"})
-    mock_instance.put = AsyncMock(return_value={"status": "success", "message": "OK"})
-    mock_instance.delete = AsyncMock(return_value={"status": "success", "message": "OK"})
+    mock_instance.get = AsyncMock(return_value={"success": True, "message": "OK", "data": []})
+    mock_instance.post = AsyncMock(return_value={"success": True, "message": "OK", "data": {}})
+    mock_instance.put = AsyncMock(return_value={"success": True, "message": "OK", "data": {}})
+    mock_instance.delete = AsyncMock(return_value={"success": True, "message": "OK"})
 
     modules = [
         "app.integrations.backend.client",
         "app.tools.project_tool",
         "app.tools.task_tool",
-        "app.tools.planner_tool",
         "app.tools.notification_tool",
         "app.tools.dashboard_tool",
         "app.executive.briefing",
@@ -59,6 +58,23 @@ def _mock_backend_client():
         for mod in modules:
             stack.enter_context(patch(f"{mod}.BackendClient", return_value=mock_instance))
         yield mock_instance
+
+
+@pytest.fixture(autouse=True)
+def _mock_meeting_client():
+    """Mock _MeetingClient so PlannerTool workflows don't make real HTTP calls."""
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value={"success": True, "message": "OK", "data": []})
+    mock_client.post = AsyncMock(return_value={"success": True, "message": "OK", "data": {"id": 1, "title": "Test", "date": "2026-07-15", "start_time": "10:00"}})
+    mock_client.put = AsyncMock(return_value={"success": True, "message": "OK", "data": {"id": 1, "title": "Test"}})
+    mock_client.delete = AsyncMock(return_value={"success": True, "message": "OK"})
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch("app.tools.planner_tool._MeetingClient", return_value=mock_client))
+        stack.enter_context(patch("app.tools.planner_tool.PlannerTool._resolve_meeting_id", return_value=1))
+        stack.enter_context(patch("app.tools.planner_tool.PlannerTool._resolve_user_id", return_value=1))
+        stack.enter_context(patch("app.tools.planner_tool.extract_date", return_value="2026-07-15"))
+        stack.enter_context(patch("app.tools.planner_tool.extract_time", return_value="10:00"))
+        yield mock_client
 
 
 # ── Helper: classify + route + execute ─────────────────────────────────────
@@ -104,15 +120,15 @@ class TestProjectWorkflows:
 
     @pytest.mark.asyncio
     async def test_show_projects_empty(self, _mock_backend_client) -> None:
-        _mock_backend_client.get.return_value = {"status": "success", "projects": []}
+        _mock_backend_client.get.return_value = {"success": True, "data": []}
         result = await self._exec("Show projects")
         assert "no projects" in result.lower()
 
     @pytest.mark.asyncio
     async def test_show_projects_with_data(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "projects": [{"id": "p1", "name": "Alpha"}, {"id": "p2", "name": "Beta"}],
+            "success": True,
+            "data": [{"id": "p1", "name": "Alpha"}, {"id": "p2", "name": "Beta"}],
         }
         result = await self._exec("Show projects")
         assert "Alpha" in result
@@ -151,14 +167,24 @@ class TestProjectWorkflows:
     # ── FALLBACK ────────────────────────────────────────────────────────
 
     @pytest.mark.asyncio
-    async def test_assign_member_fallback(self) -> None:
+    async def test_assign_member_fallback(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.side_effect = [
+            {"success": True, "data": [{"id": "p1", "name": "BuildTrack"}]},
+            {"success": True, "data": [{"id": "u1", "full_name": "Aryan"}]},
+        ]
         result = await self._exec("Assign member", IntentType.ASSIGN_MEMBER)
-        assert "successfully" in result.lower()
+        _mock_backend_client.post.assert_called_once_with("/projects/p1/members/u1")
+        assert "added to project" in result.lower()
 
     @pytest.mark.asyncio
-    async def test_remove_member_fallback(self) -> None:
+    async def test_remove_member_fallback(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.side_effect = [
+            {"success": True, "data": [{"id": "p1", "name": "BuildTrack"}]},
+            {"success": True, "data": [{"id": "u1", "full_name": "Aryan"}]},
+        ]
         result = await self._exec("Remove member", IntentType.REMOVE_MEMBER)
-        assert "successfully" in result.lower()
+        _mock_backend_client.delete.assert_called_once_with("/projects/p1/members/u1")
+        assert "removed from project" in result.lower()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -200,9 +226,8 @@ class TestTaskWorkflows:
     @pytest.mark.asyncio
     async def test_show_tasks(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "tasks": [{"id": "t1", "title": "Task 1", "status": "pending"}],
-            "message": "1 task",
+            "success": True,
+            "data": [{"id": "t1", "title": "Task 1", "status": "pending"}],
         }
         result = await self._exec("Show my tasks")
         assert "You have 1 task" in result
@@ -210,9 +235,8 @@ class TestTaskWorkflows:
     @pytest.mark.asyncio
     async def test_show_overdue(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "tasks": [{"id": "t2", "title": "Late task", "status": "overdue"}],
-            "message": "1 overdue",
+            "success": True,
+            "data": [{"id": "t2", "title": "Late task", "status": "overdue"}],
         }
         result = await self._exec("Show overdue")
         _mock_backend_client.get.assert_called_once_with("/tasks/overdue")
@@ -222,50 +246,69 @@ class TestTaskWorkflows:
 
     @pytest.mark.asyncio
     async def test_assign_task(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.side_effect = [
+            {"success": True, "data": [{"id": "t1", "title": "Deploy build"}]},
+            {"success": True, "data": [{"id": "3", "full_name": "Aryan"}]},
+        ]
         _mock_backend_client.put.return_value = {
             "status": "success", "id": "t1", "title": "Task", "assignee": "Aryan",
         }
-        result = await self._exec("Assign task to Aryan", IntentType.ASSIGN_TASK)
+        result = await self._exec("Assign task Deploy build to Aryan", IntentType.ASSIGN_TASK)
         assert "assigned" in result.lower()
+        _mock_backend_client.put.assert_called_once()
+        assert _mock_backend_client.put.call_args.kwargs["json_body"].get("assigned_to_id") == "3"
 
     # ── UPDATE ──────────────────────────────────────────────────────────
 
     @pytest.mark.asyncio
     async def test_update_task(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = {
+            "success": True, "data": [{"id": "t1", "title": "Old title"}],
+        }
         _mock_backend_client.put.return_value = {
             "status": "success", "id": "t1", "title": "New title",
         }
-        result = await self._exec("Update task", IntentType.UPDATE_TASK)
+        result = await self._exec("Update task Old title to New title", IntentType.UPDATE_TASK)
         assert "updated" in result.lower()
 
     # ── CHANGE DEADLINE ─────────────────────────────────────────────────
 
     @pytest.mark.asyncio
     async def test_change_deadline(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = {
+            "success": True, "data": [{"id": "t1", "title": "Task"}],
+        }
         _mock_backend_client.put.return_value = {
             "status": "success", "id": "t1", "title": "Task", "due_date": "2026-07-20",
         }
-        result = await self._exec("Set deadline to July 20", IntentType.CHANGE_DEADLINE)
+        result = await self._exec("Set deadline for Task to July 20", IntentType.CHANGE_DEADLINE)
         assert "Deadline" in result
 
     # ── CHANGE PRIORITY ─────────────────────────────────────────────────
 
     @pytest.mark.asyncio
     async def test_change_priority(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = {
+            "success": True, "data": [{"id": "t1", "title": "Task"}],
+        }
         _mock_backend_client.put.return_value = {
             "status": "success", "id": "t1", "title": "Task", "priority": "high",
         }
-        result = await self._exec("Set priority to high", IntentType.CHANGE_PRIORITY)
+        result = await self._exec("Set priority for Task to high", IntentType.CHANGE_PRIORITY)
         assert "Priority" in result
 
     # ── DELETE ──────────────────────────────────────────────────────────
 
     @pytest.mark.asyncio
     async def test_delete_task(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = {
+            "success": True, "data": [{"id": "t1", "title": "Backend API"}],
+        }
         _mock_backend_client.delete.return_value = {"status": "success", "message": "Deleted."}
         result = await self._exec("Delete task Backend API", IntentType.DELETE_TASK)
         assert "deleted successfully" in result.lower()
         assert "Backend API" in result
+        _mock_backend_client.delete.assert_called_once_with("/tasks/t1")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -278,52 +321,52 @@ class TestPlannerWorkflows:
         return await run_workflow(message, PlannerTool(), intent)
 
     @pytest.mark.asyncio
-    async def test_add_meeting(self, _mock_backend_client) -> None:
-        _mock_backend_client.post.return_value = {"status": "success", "message": "Meeting scheduled."}
+    async def test_add_meeting(self, _mock_meeting_client) -> None:
+        _mock_meeting_client.post.return_value = {"success": True, "message": "Meeting scheduled.", "data": {"id": 1, "title": "Test", "date": "2026-07-15", "start_time": "10:00"}}
         result = await self._exec("Schedule a meeting")
         assert "Meeting scheduled" in result
         assert "Would you like" in result
 
     @pytest.mark.asyncio
-    async def test_cancel_meeting(self, _mock_backend_client) -> None:
-        _mock_backend_client.delete.return_value = {"status": "success", "message": "Cancelled."}
+    async def test_cancel_meeting(self, _mock_meeting_client) -> None:
+        _mock_meeting_client.delete.return_value = {"success": True, "message": "Cancelled."}
         result = await self._exec("Cancel meeting", IntentType.CANCEL_MEETING)
         assert "cancelled" in result.lower()
 
     @pytest.mark.asyncio
-    async def test_reschedule_meeting(self, _mock_backend_client) -> None:
-        _mock_backend_client.put.return_value = {"status": "success", "message": "Rescheduled."}
+    async def test_reschedule_meeting(self, _mock_meeting_client) -> None:
+        _mock_meeting_client.put.return_value = {"success": True, "message": "Rescheduled."}
         result = await self._exec("Reschedule meeting to tomorrow", IntentType.RESCHEDULE_MEETING)
         assert "rescheduled" in result.lower()
 
     @pytest.mark.asyncio
-    async def test_today_schedule(self, _mock_backend_client) -> None:
-        _mock_backend_client.get.return_value = {
-            "status": "success",
-            "events": [{"id": "e1", "title": "Standup", "start": "09:00", "end": "09:15"}],
+    async def test_today_schedule(self, _mock_meeting_client) -> None:
+        _mock_meeting_client.get.return_value = {
+            "success": True,
+            "data": [{"id": "e1", "title": "Standup", "date": "2026-07-15", "start_time": "09:00"}],
         }
         result = await self._exec("What is my schedule today")
         assert "Today" in result
 
     @pytest.mark.asyncio
-    async def test_week_schedule(self, _mock_backend_client) -> None:
-        _mock_backend_client.get.return_value = {
-            "status": "success",
-            "events": [{"id": "e1", "title": "Sprint Review", "start": "2026-07-13 14:00"}],
+    async def test_week_schedule(self, _mock_meeting_client) -> None:
+        _mock_meeting_client.get.return_value = {
+            "success": True,
+            "data": [{"id": "e1", "title": "Sprint Review", "date": "2026-07-13", "start_time": "14:00"}],
         }
         result = await self._exec("What is on my calendar this week")
-        assert "1 event(s)" in result.lower()
+        assert "This week" in result
         assert "Sprint Review" in result
 
     @pytest.mark.asyncio
-    async def test_week_schedule_with_event_details(self, _mock_backend_client) -> None:
-        _mock_backend_client.get.return_value = {
-            "status": "success",
-            "events": [{"id": "e2", "title": "Design Review", "start": "15:00", "end": "16:00"}],
+    async def test_week_schedule_with_event_details(self, _mock_meeting_client) -> None:
+        _mock_meeting_client.get.return_value = {
+            "success": True,
+            "data": [{"id": "e2", "title": "Design Review", "date": "2026-07-13", "start_time": "15:00"}],
         }
         result = await self._exec("What is on my calendar this week")
-        assert "1 event(s)" in result.lower()
-        assert "Design Review at 15:00" in result
+        assert "This week" in result
+        assert "Design Review" in result
 
     @pytest.mark.asyncio
     async def test_add_reminder_fallback(self) -> None:
@@ -343,8 +386,8 @@ class TestNotificationWorkflows:
     @pytest.mark.asyncio
     async def test_show_notifications(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "notifications": [{"id": "n1", "text": "Deadline tomorrow", "read": False}],
+            "success": True,
+            "data": [{"id": "n1", "title": "Deadline tomorrow", "is_read": False}],
         }
         result = await self._exec("Show notifications")
         assert "Deadline tomorrow" in result
@@ -374,18 +417,18 @@ class TestDashboardWorkflows:
     @pytest.mark.asyncio
     async def test_focus_today(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "data": {"focus": "Review API design"},
+            "success": True,
+            "data": {"todayTasks": 3},
         }
         result = await self._exec("What to focus on")
         assert "Focus for today" in result
-        assert "Review API design" in result
+        assert "task(s) due today" in result
 
     @pytest.mark.asyncio
     async def test_executive_summary(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "data": {"focus": "All on track", "risks": []},
+            "success": True,
+            "data": {"todayTasks": 5},
         }
         result = await self._exec("Give me an executive summary")
         assert "Executive Brief" in result
@@ -393,22 +436,22 @@ class TestDashboardWorkflows:
     @pytest.mark.asyncio
     async def test_today_priorities(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "data": {"priorities": [{"rank": 1, "title": "Finish API"}]},
+            "success": True,
+            "data": {"highPriorityTasks": 2},
         }
         result = await self._exec("What are my priorities today")
         assert "Priorities" in result
-        assert "Finish API" in result
+        assert "high-priority" in result
 
     @pytest.mark.asyncio
     async def test_business_risk(self, _mock_backend_client) -> None:
         _mock_backend_client.get.return_value = {
-            "status": "success",
-            "data": {"risks": [{"level": "high", "description": "Budget overrun"}]},
+            "success": True,
+            "data": {"overdueTasks": 4},
         }
         result = await self._exec("What are the business risks")
         assert "Risk Assessment" in result
-        assert "Budget overrun" in result
+        assert "overdue" in result.lower()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -420,11 +463,11 @@ class TestExecutiveBriefingWorkflow:
     @pytest.mark.asyncio
     async def test_daily_briefing_full(self, _mock_backend_client) -> None:
         _mock_backend_client.get.side_effect = [
-            {"status": "success", "data": {"focus": "Review API", "risks": [{"level": "low", "description": "None"}]}},
-            {"status": "success", "tasks": [{"id": "t1", "title": "Finish tests", "status": "pending"}], "message": "1 task"},
-            {"status": "success", "tasks": [], "message": "0 overdue"},
-            {"status": "success", "events": [{"id": "e1", "title": "Standup", "start": "09:00", "end": "09:30"}], "message": "1 event"},
-            {"status": "success", "notifications": [], "message": "0 notifications"},
+            {"success": True, "data": {"overdueTasks": 0}},
+            {"success": True, "data": [{"id": "t1", "title": "Finish tests", "status": "pending"}]},
+            {"success": True, "data": []},
+            {"success": True, "data": [{"id": "e1", "title": "Standup", "start": "09:00"}]},
+            {"success": True, "data": []},
         ]
         service = ExecutiveBriefingService(client=_mock_backend_client)
         tool = ExecutiveTool(briefing_service=service)
@@ -437,11 +480,11 @@ class TestExecutiveBriefingWorkflow:
     @pytest.mark.asyncio
     async def test_daily_briefing_high_risk(self, _mock_backend_client) -> None:
         _mock_backend_client.get.side_effect = [
-            {"status": "success", "data": {"focus": "Fix security bug", "risks": [{"level": "high", "description": "Security vulnerability"}]}},
-            {"status": "success", "tasks": [{"id": "t1", "title": "Task 1", "status": "pending"}], "message": "1 task"},
-            {"status": "success", "tasks": [{"id": "t2", "title": "Overdue", "status": "overdue"}], "message": "1 overdue"},
-            {"status": "success", "events": [], "message": "0 events"},
-            {"status": "success", "notifications": [], "message": "0 notifications"},
+            {"success": True, "data": {"overdueTasks": 4}},
+            {"success": True, "data": [{"id": "t1", "title": "Task 1", "status": "pending"}]},
+            {"success": True, "data": [{"id": "t2", "title": "Overdue", "status": "overdue"}]},
+            {"success": True, "data": []},
+            {"success": True, "data": []},
         ]
         service = ExecutiveBriefingService(client=_mock_backend_client)
         tool = ExecutiveTool(briefing_service=service)
@@ -540,14 +583,15 @@ class TestFollowUpSuggestions:
 
     @pytest.mark.asyncio
     async def test_complete_task_has_suggestion(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = {"success": True, "data": [{"id": "t1", "title": "Test"}]}
         _mock_backend_client.put.return_value = {"status": "success", "id": "t1", "title": "Test"}
         tool = TaskTool()
-        result = await tool.execute(make_context("Complete task"), IntentType.COMPLETE_TASK)
+        result = await tool.execute(make_context("Complete task Test"), IntentType.COMPLETE_TASK)
         assert "Would you like" in result
 
     @pytest.mark.asyncio
-    async def test_add_meeting_has_suggestion(self, _mock_backend_client) -> None:
-        _mock_backend_client.post.return_value = {"status": "success", "message": "OK"}
+    async def test_add_meeting_has_suggestion(self, _mock_meeting_client) -> None:
+        _mock_meeting_client.post.return_value = {"success": True, "message": "OK", "data": {"id": 1, "title": "Test", "date": "2026-07-15", "start_time": "10:00"}}
         tool = PlannerTool()
         result = await tool.execute(make_context("Schedule meeting"), IntentType.ADD_MEETING)
         assert "Would you like" in result
@@ -632,10 +676,11 @@ class TestParameterExtraction:
 
     @pytest.mark.asyncio
     async def test_delete_task_extracts_identifier(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = {"success": True, "data": [{"id": "t1", "title": "Backend API"}]}
         _mock_backend_client.delete.return_value = {"status": "success", "message": "Deleted."}
         tool = TaskTool()
         await tool.execute(make_context("Delete task Backend API"), IntentType.DELETE_TASK)
-        _mock_backend_client.delete.assert_called_once_with("/tasks/Backend API")
+        _mock_backend_client.delete.assert_called_once_with("/tasks/t1")
 
     @pytest.mark.asyncio
     async def test_delete_task_with_id(self, _mock_backend_client) -> None:

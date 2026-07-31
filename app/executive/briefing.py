@@ -60,16 +60,23 @@ class ExecutiveBriefingService:
         overdue_count = len(overdue)
         meeting_count = len(events)
 
-        unread = sum(1 for n in notifications if not n.get("read", True))
+        unread = sum(1 for n in notifications if not n.get("is_read", n.get("read", False)))
         risk_level = "Low"
-        if isinstance(dashboard, dict):
-            risks = dashboard.get("risks")
-            if risks:
-                high = [r for r in risks if isinstance(r, dict) and r.get("level", "").lower() == "high"]
-                medium = [r for r in risks if isinstance(r, dict) and r.get("level", "").lower() == "medium"]
-                if high:
+        if dashboard is not None:
+            if isinstance(dashboard, dict):
+                risks = dashboard.get("risks")
+                if risks:
+                    high = [r for r in risks if isinstance(r, dict) and r.get("level", "").lower() == "high"]
+                    medium = [r for r in risks if isinstance(r, dict) and r.get("level", "").lower() == "medium"]
+                    if high:
+                        risk_level = "High"
+                    elif medium:
+                        risk_level = "Medium"
+            else:
+                overdue = getattr(dashboard, "overdueTasks", 0) or 0
+                if overdue > 3:
                     risk_level = "High"
-                elif medium:
+                elif overdue > 0:
                     risk_level = "Medium"
 
         highest_priority = self._priority_engine.determine_priority(tasks, overdue, events, dashboard)

@@ -1,7 +1,7 @@
 from app.agents.base import BaseAgent
 from app.orchestrator.enums import RequestCategory
 from app.orchestrator.context import ExecutionContext
-from app.orchestrator.pipeline import ExecutionPipeline, FEATURE_PLACEHOLDER
+from app.orchestrator.pipeline import ExecutionPipeline
 from app.services.knowledge_search import KnowledgeSearchService
 from app.core.logging import logger
 

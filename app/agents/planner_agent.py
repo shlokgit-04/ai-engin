@@ -1,14 +1,13 @@
 from app.agents.base import BaseAgent
 from app.orchestrator.enums import RequestCategory
 from app.orchestrator.context import ExecutionContext
-from app.orchestrator.pipeline import FEATURE_PLACEHOLDER
 from app.core.logging import logger
 
 
 class PlannerAgent(BaseAgent):
     async def execute(self, context: ExecutionContext, category: RequestCategory) -> str:
         logger.info("PlannerAgent executing", category=category.value)
-        return FEATURE_PLACEHOLDER
+        return "I can help you manage meetings. Try saying: create a meeting, show my meetings, or upload minutes."
 
     async def health_check(self) -> bool:
         return True

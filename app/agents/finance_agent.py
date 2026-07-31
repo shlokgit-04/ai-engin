@@ -1,14 +1,13 @@
 from app.agents.base import BaseAgent
 from app.orchestrator.enums import RequestCategory
 from app.orchestrator.context import ExecutionContext
-from app.orchestrator.pipeline import FEATURE_PLACEHOLDER
 from app.core.logging import logger
 
 
 class FinanceAgent(BaseAgent):
     async def execute(self, context: ExecutionContext, category: RequestCategory) -> str:
         logger.info("FinanceAgent executing", category=category.value)
-        return FEATURE_PLACEHOLDER
+        return "I can help with finance-related questions. Try asking about budgets, expenses, or financial reports."
 
     async def health_check(self) -> bool:
         return True

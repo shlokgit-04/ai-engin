@@ -57,7 +57,7 @@ class BusinessInsights:
                 insights.append(f"You have {pending} pending tasks — consider delegating or reprioritising.")
 
         if notifications:
-            unread = sum(1 for n in notifications if not n.get("read", True))
+            unread = sum(1 for n in notifications if not n.get("is_read", n.get("read", False)))
             if unread > 5:
                 insights.append(f"You have {unread} unread notifications.")
 

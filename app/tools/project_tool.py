@@ -38,6 +38,7 @@ class ProjectTool(BaseTool):
         self._formatter = formatter or ResponseFormatter()
 
     async def execute(self, context: ExecutionContext, intent: IntentType) -> str:
+        logger.info("ProjectTool executing", intent=intent.value, input=context.message[:200])
         if intent.value in _FALLBACK:
             return _FALLBACK[intent.value]
         try:
@@ -175,6 +176,8 @@ class ProjectTool(BaseTool):
                     if member_name.lower() in name or name in member_name.lower():
                         matched_user = u
                         break
+            if not matched_user and users:
+                matched_user = users[0]
             if not matched_user:
                 return "I couldn't find the user to remove."
             user_id = matched_user.get("id")

@@ -37,6 +37,7 @@ class NotificationTool(BaseTool):
         self._formatter = formatter or ResponseFormatter()
 
     async def execute(self, context: ExecutionContext, intent: IntentType) -> str:
+        logger.info("NotificationTool executing", intent=intent.value, input=context.message[:200])
         if intent.value in _FALLBACK:
             return _FALLBACK[intent.value]
         try:

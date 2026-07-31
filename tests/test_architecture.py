@@ -15,7 +15,7 @@ from typing import Any
 from app.orchestrator.enums import RequestCategory
 from app.orchestrator.context import ExecutionContext
 from app.orchestrator.orchestrator import AIOrchestrator
-from app.orchestrator.pipeline import ExecutionPipeline, FEATURE_PLACEHOLDER
+from app.orchestrator.pipeline import ExecutionPipeline
 from app.agents.base import BaseAgent
 from app.agents.knowledge_agent import KnowledgeAgent
 from app.agents.planner_agent import PlannerAgent
@@ -191,8 +191,8 @@ class TestKnowledgeAgentBehaviour:
         assert result == "fake:test"
 
 
-class TestPlaceholderAgentBehaviour:
-    """All other agents return FEATURE_PLACEHOLDER."""
+class TestAgentDefaultResponses:
+    """Agents return helpful guidance messages when called directly."""
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -200,13 +200,13 @@ class TestPlaceholderAgentBehaviour:
         [PlannerAgent, FinanceAgent, MeetingAgent, TaskAgent,
          NotificationAgent, RecommendationAgent],
     )
-    async def test_execute_returns_placeholder(self, cls: type) -> None:
+    async def test_execute_returns_helpful_message(self, cls: type) -> None:
         instance = cls()
         result = await instance.execute(
             ExecutionContext(message="anything"), RequestCategory.GENERAL_CHAT
         )
-        assert result == FEATURE_PLACEHOLDER, (
-            f"{cls.__name__} should return FEATURE_PLACEHOLDER"
+        assert result and len(result) > 10, (
+            f"{cls.__name__} should return a helpful message"
         )
 
 

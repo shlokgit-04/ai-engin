@@ -48,11 +48,14 @@ class PriorityEngine:
 
         top_priority = None
         if dashboard_data:
-            priorities = dashboard_data.get("priorities")
-            if priorities and len(priorities) > 0:
-                top_priority = priorities[0].get("title") if isinstance(priorities[0], dict) else str(priorities[0])
-            if not top_priority:
-                top_priority = dashboard_data.get("focus")
+            if isinstance(dashboard_data, dict):
+                priorities = dashboard_data.get("priorities")
+                if priorities and len(priorities) > 0:
+                    top_priority = priorities[0].get("title") if isinstance(priorities[0], dict) else str(priorities[0])
+                if not top_priority:
+                    top_priority = dashboard_data.get("focus")
+            else:
+                top_priority = getattr(dashboard_data, "focus", None)
 
         if top_priority:
             return top_priority

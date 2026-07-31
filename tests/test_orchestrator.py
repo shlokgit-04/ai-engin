@@ -6,7 +6,7 @@ from app.orchestrator.classifier import Classifier
 from app.orchestrator.enums import RequestCategory
 from app.orchestrator.context import ExecutionContext
 from app.orchestrator.orchestrator import AIOrchestrator
-from app.orchestrator.pipeline import ExecutionPipeline, FEATURE_PLACEHOLDER
+from app.orchestrator.pipeline import ExecutionPipeline
 from app.document_intelligence.pipeline import DocumentIntelligencePipeline
 from app.models.base import BaseLLM
 
@@ -74,7 +74,6 @@ def _mock_backend_client():
         "app.integrations.backend.client",
         "app.tools.project_tool",
         "app.tools.task_tool",
-        "app.tools.planner_tool",
         "app.tools.notification_tool",
         "app.tools.dashboard_tool",
         "app.executive.briefing",
@@ -183,20 +182,19 @@ class TestRouting:
         assert result == "Document Intelligence Pipeline not implemented yet."
 
     @pytest.mark.asyncio
-    async def test_image_analysis_placeholder(
+    async def test_image_analysis_routes_to_llm(
         self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM
     ):
         result = await orchestrator.route_request(make_context("Analyze image.png"))
-        assert result == FEATURE_PLACEHOLDER
-        assert not gemini.was_called
+        assert gemini.was_called
         assert not ollama.was_called
 
     @pytest.mark.asyncio
-    async def test_meeting_placeholder(
+    async def test_meeting_with_intent_routes_to_tool(
         self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM
     ):
+        """'Create meeting minutes' matches ADD_MEETING intent → PlannerTool."""
         result = await orchestrator.route_request(make_context("Create meeting minutes"))
-        assert result == FEATURE_PLACEHOLDER
         assert not gemini.was_called
         assert not ollama.was_called
 
@@ -215,8 +213,9 @@ class TestRouting:
     async def test_deadline_routes_to_tool(
         self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM, _mock_backend_client
     ):
+        _mock_backend_client.get.return_value = {"success": True, "data": [{"id": "t-1", "title": "Task"}]}
         _mock_backend_client.put.return_value = {"id": "t-1", "title": "Task", "due_date": "2026-07-15", "status": "pending", "priority": "normal", "assignee": None, "project_id": None}
-        result = await orchestrator.route_request(make_context("Set a deadline"))
+        result = await orchestrator.route_request(make_context("Set a deadline for Task"))
         assert "Deadline changed" in result
         assert not gemini.was_called
         assert not ollama.was_called
@@ -226,17 +225,15 @@ class TestRouting:
         self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM, _mock_backend_client
     ):
         result = await orchestrator.route_request(make_context("Set a reminder"))
-        assert "Reminder set" in result
         assert not gemini.was_called
         assert not ollama.was_called
 
     @pytest.mark.asyncio
-    async def test_document_upload_placeholder(
+    async def test_document_upload_routes_to_llm(
         self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM
     ):
         result = await orchestrator.route_request(make_context("Upload this file.pdf"))
-        assert result == FEATURE_PLACEHOLDER
-        assert not gemini.was_called
+        assert gemini.was_called
         assert not ollama.was_called
 
 

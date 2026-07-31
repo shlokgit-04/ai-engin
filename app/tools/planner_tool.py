@@ -90,6 +90,7 @@ class PlannerTool(BaseTool):
         self._formatter = formatter or ResponseFormatter()
 
     async def execute(self, context: ExecutionContext, intent: IntentType) -> str:
+        logger.info("PlannerTool executing", intent=intent.value, input=context.message[:200])
         try:
             return await self._route(context, intent)
         except httpx.HTTPStatusError as exc:
@@ -153,6 +154,8 @@ class PlannerTool(BaseTool):
             result = await self._show_mom_field(context, "followups")
         elif intent == IntentType.SHOW_MEETING_BLOCKERS:
             result = await self._show_mom_field(context, "blockers")
+        elif intent == IntentType.ADD_REMINDER:
+            result = await self._add_reminder(context)
         elif intent == IntentType.TODAY_SCHEDULE:
             result = await self._show_meetings(context, filter_="today")
         elif intent == IntentType.WEEK_SCHEDULE:
@@ -633,6 +636,20 @@ class PlannerTool(BaseTool):
         if not value:
             return f"No {field} recorded for meeting (ID: {mid})."
         return f"**{field.title()} for Meeting {mid}:**\n{value}"
+
+    async def _add_reminder(self, ctx: ExecutionContext) -> str:
+        title = extract_event_title(ctx.message, "Reminder")
+        valid, err = validate_not_empty(title, "Reminder title")
+        if not valid:
+            return err
+        event_date = extract_date(ctx.message)
+        suggestion = get_suggestion("add_reminder")
+        result = self._formatter.format(IntentType.ADD_REMINDER, {
+            "title": title,
+            "date": event_date or "Not set",
+        })
+        logger.info("PlannerTool reminder set", title=title, date=event_date)
+        return f"{result}\n\n{suggestion}" if suggestion else result
 
     def name(self) -> str:
         return "PlannerTool"

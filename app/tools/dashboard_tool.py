@@ -31,6 +31,7 @@ class DashboardTool(BaseTool):
         self._formatter = formatter or ResponseFormatter()
 
     async def execute(self, context: ExecutionContext, intent: IntentType) -> str:
+        logger.info("DashboardTool executing", intent=intent.value, input=context.message[:200])
         try:
             return await self._route(context, intent)
         except tuple(_ERROR_MAP) as exc:

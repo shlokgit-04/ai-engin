@@ -1,14 +1,13 @@
 from app.agents.base import BaseAgent
 from app.orchestrator.enums import RequestCategory
 from app.orchestrator.context import ExecutionContext
-from app.orchestrator.pipeline import FEATURE_PLACEHOLDER
 from app.core.logging import logger
 
 
 class TaskAgent(BaseAgent):
     async def execute(self, context: ExecutionContext, category: RequestCategory) -> str:
         logger.info("TaskAgent executing", category=category.value)
-        return FEATURE_PLACEHOLDER
+        return "I can help you manage tasks. Try saying: create a task, show my tasks, assign task, or set a deadline."
 
     async def health_check(self) -> bool:
         return True

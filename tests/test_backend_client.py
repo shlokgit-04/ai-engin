@@ -27,7 +27,9 @@ from app.integrations.backend.exceptions import (
 
 @pytest.fixture
 def client() -> BackendClient:
-    return BackendClient(base_url="http://test-backend:8001")
+    c = BackendClient(base_url="http://test-backend:8001")
+    c._token = "test-token"
+    return c
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +140,7 @@ class TestErrorHandling:
     async def test_invalid_json_raises_invalid_json_error(
         self, client: BackendClient
     ) -> None:
+        client._token = "test-token"
         mock_resp = AsyncMock(spec=httpx.Response)
         mock_resp.status_code = 200
         mock_resp.json.side_effect = json.JSONDecodeError("bad json", "", 0)
@@ -155,6 +158,7 @@ class TestErrorHandling:
 class TestRetryLogic:
     @pytest.mark.asyncio
     async def test_retries_on_connection_error(self, client: BackendClient) -> None:
+        client._token = "test-token"
         client._max_retries = 2
         side_effects = [
             httpx.ConnectError("fail 1"),
@@ -186,6 +190,7 @@ class TestRetryLogic:
 
     @pytest.mark.asyncio
     async def test_does_not_retry_4xx(self, client: BackendClient) -> None:
+        client._token = "test-token"
         client._max_retries = 2
         mock_resp = AsyncMock(spec=httpx.Response)
         mock_resp.status_code = 400
@@ -198,6 +203,7 @@ class TestRetryLogic:
 
     @pytest.mark.asyncio
     async def test_does_not_retry_404(self, client: BackendClient) -> None:
+        client._token = "test-token"
         client._max_retries = 2
         mock_resp = AsyncMock(spec=httpx.Response)
         mock_resp.status_code = 404
