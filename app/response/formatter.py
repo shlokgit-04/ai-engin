@@ -80,7 +80,7 @@ class ResponseFormatter:
 
     def _format_create_task(self, data: dict[str, Any]) -> str:
         return tpl.TASK_CREATED.format(
-            priority=data.get("priority", "Normal"),
+            priority=data.get("priority", "Medium"),
             due_date=data.get("due_date", "Not set"),
         )
 

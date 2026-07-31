@@ -153,11 +153,13 @@ def extract_time(message: str) -> str | None:
 
 def extract_priority(message: str) -> str:
     lower = message.lower()
-    if "high priority" in lower or " high " in f" {lower} ":
+    if "high priority" in lower or " high " in f" {lower} " or "critical priority" in lower:
         return "high"
+    if "critical" in lower:
+        return "critical"
     if "low priority" in lower or " low " in f" {lower} ":
         return "low"
-    return "normal"
+    return "medium"
 
 
 def extract_project_identifier(message: str) -> str | None:

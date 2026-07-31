@@ -30,6 +30,6 @@ def validate_date(date_str: str | None) -> tuple[bool, str | None]:
 def validate_priority(priority: str | None) -> tuple[bool, str | None]:
     if priority is None:
         return True, None
-    if priority.lower() not in ("high", "medium", "normal", "low"):
-        return False, f"'{priority}' is not a valid priority. Use high, medium, normal, or low."
+    if priority.lower() not in ("high", "medium", "low", "critical"):
+        return False, f"'{priority}' is not a valid priority. Use high, medium, low, or critical."
     return True, None
