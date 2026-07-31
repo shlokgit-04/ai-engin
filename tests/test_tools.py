@@ -727,6 +727,55 @@ class TestToolBackendIntegration:
         _mock_meeting_client.post.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_add_meeting_sends_type_and_end_time(self, _mock_meeting_client) -> None:
+        _mock_meeting_client.post.return_value = {"success": True, "message": "OK", "data": {"id": 1}}
+        tool = PlannerTool(client=_mock_meeting_client)
+        await tool.execute(
+            make_context("Schedule a meeting titled Sprint Planning at 10:00"),
+            IntentType.ADD_MEETING,
+        )
+        body = _mock_meeting_client.post.call_args.kwargs["json_body"]
+        assert body["type"] == "meeting"
+        assert body["title"] == "Sprint Planning"
+        assert body["start_time"] == "10:00"
+        assert body["end_time"] == "11:00"
+
+    @pytest.mark.asyncio
+    async def test_add_meeting_title_no_longer_junk_word(self, _mock_meeting_client) -> None:
+        _mock_meeting_client.post.return_value = {"success": True, "message": "OK", "data": {"id": 1}}
+        tool = PlannerTool(client=_mock_meeting_client)
+        await tool.execute(
+            make_context("Schedule a meeting with me titled Sprint Planning on 2026-08-05 at 10:00"),
+            IntentType.ADD_MEETING,
+        )
+        body = _mock_meeting_client.post.call_args.kwargs["json_body"]
+        assert body["title"] == "Sprint Planning"
+
+    @pytest.mark.asyncio
+    async def test_create_task_sets_deadline_and_self_assigns(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = {"success": True, "data": {"id": 4}}
+        tool = TaskTool()
+        await tool.execute(
+            make_context("Create a task assigned to me: Prepare Q3 budget report, due this Friday"),
+            IntentType.CREATE_TASK,
+        )
+        body = _mock_backend_client.post.call_args.kwargs["json_body"]
+        assert body["title"] == "Prepare Q3 budget report"
+        assert body["assigned_to_id"] == 4
+        assert body["deadline"]
+
+    @pytest.mark.asyncio
+    async def test_create_task_title_no_assignment_leak(self, _mock_backend_client) -> None:
+        tool = TaskTool()
+        await tool.execute(
+            make_context("Create a task to review PRs by tomorrow"),
+            IntentType.CREATE_TASK,
+        )
+        body = _mock_backend_client.post.call_args.kwargs["json_body"]
+        assert body["title"] == "review PRs"
+        assert body["deadline"]
+
+    @pytest.mark.asyncio
     async def test_today_schedule_calls_get_via_meeting_client(self, _mock_meeting_client) -> None:
         _mock_meeting_client.get.return_value = {"success": True, "message": "OK", "data": []}
         tool = PlannerTool(client=_mock_meeting_client)

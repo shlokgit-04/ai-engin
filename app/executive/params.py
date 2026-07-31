@@ -45,19 +45,36 @@ def extract_task_update_title(message: str, default: str = "Untitled Task") -> s
     return default
 
 
+def _clean_task_title(candidate: str) -> str:
+    candidate = candidate.strip(".,!?:; ")
+    lowered = candidate.lower()
+    # strip trailing "due <date>" / ", due ..." / "by <date>"
+    m = re.search(r",?\s*(?:due|by)\s+(?:(?:on|the)\s+)?[^,.;!?]+$", lowered)
+    if m:
+        candidate = candidate[: m.start()].strip(".,!?:; ")
+        lowered = candidate.lower()
+    for suffix in (" high priority", " medium priority", " low priority", " normal priority", " critical priority", " next week", " tomorrow", " today"):
+        if lowered.rstrip(" .").endswith(suffix):
+            candidate = candidate[: -len(suffix)].strip(".,!?:; ")
+            lowered = candidate.lower()
+    # strip leading assignment phrases and connectors
+    candidate = re.sub(
+        r"^(?:assigned to me\s*[:,-]?\s*|assign(?:ed)? me\s*[:,-]?\s*|assigned to\s+[^,:]{0,40}?[:,-]?\s*|for me\s*[:,-]?\s*|to me\s*[:,-]?\s*|to\s+|assigned\s*[:,-]?\s*)[,:]?\s*",
+        "",
+        candidate,
+        flags=re.IGNORECASE,
+    )
+    candidate = re.sub(r"^to\s+", "", candidate, flags=re.IGNORECASE).strip(".,!?:; ")
+    return candidate
+
+
 def extract_task_title(message: str, default: str = "Untitled Task") -> str:
-    for prefix in ("create task", "new task", "add task", "create a task"):
+    for prefix in ("create a task", "create task", "new task", "add a task", "add task"):
         if prefix in message.lower():
             idx = message.lower().index(prefix) + len(prefix)
             candidate = message[idx:].strip(".,!? ")
             if candidate:
-                for word in [
-                    " tomorrow", " today", " next week",
-                    " high priority", " low priority", " medium priority", " normal priority",
-                ]:
-                    if candidate.lower().endswith(word):
-                        candidate = candidate[:-len(word)].strip()
-                return candidate or default
+                return _clean_task_title(candidate) or default
     return default
 
 
@@ -73,26 +90,73 @@ def extract_task_id(message: str, context: ExecutionContext | None = None) -> st
     return "default"
 
 
+_TITLE_STOP_WORDS = {
+    "a", "an", "the", "my", "me", "for", "to", "about", "of", "on", "at",
+    "with", "in", "by", "this", "next", "please", "kindly", "us", "our",
+}
+_TITLE_WEEKDAYS = {
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+}
+_TITLE_MONTHS = {
+    "january", "february", "march", "april", "may", "june", "july",
+    "august", "september", "october", "november", "december",
+}
+
+
+def _is_title_noise_word(word: str) -> bool:
+    wl = word.lower().strip(".,!?:;")
+    if not wl:
+        return True
+    if wl in _TITLE_STOP_WORDS:
+        return True
+    if wl in _TITLE_WEEKDAYS or wl in _TITLE_MONTHS:
+        return True
+    if wl in ("meeting", "event", "reminder", "tomorrow", "today"):
+        return True
+    if re.match(r"^\d{1,2}(:\d{2})?\s*(am|pm)?$", wl):
+        return True
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", wl) or re.match(r"^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$", wl):
+        return True
+    return False
+
+
+def _trim_event_title(raw: str) -> str:
+    words = raw.split()
+    cleaned = []
+    for w in words:
+        if _is_title_noise_word(w):
+            if cleaned:
+                break
+            continue
+        cleaned.append(w)
+    return " ".join(cleaned).strip(".,!?:; ")
+
+
 def extract_event_title(message: str, default: str = "Event") -> str:
     lower = message.lower()
-    for prefix in ("schedule", "add", "book", "set up", "set", "create", "remind me", "remind"):
-        if prefix in lower:
-            idx = lower.index(prefix) + len(prefix)
-            candidate = message[idx:].strip(".,!? ")
-            words = candidate.split()
-            cleaned = []
-            skip = {"a", "an", "the", "me", "for", "to", "about", "of", "on", "at"}
-            for w in words:
-                wl = w.strip(".,!?#").lower()
-                if wl in skip:
-                    continue
-                if wl in ("meeting", "event", "reminder"):
-                    continue
-                cleaned.append(w)
-                break
-            candidate = " ".join(cleaned).strip().strip(".,!? ")
-            if candidate:
-                return candidate
+    # 1. Explicit "titled/called/named <title>" — take everything after the marker
+    for marker in ("titled", "called", "named"):
+        m = re.search(rf"\b{marker}\s+(.+)$", message, re.IGNORECASE)
+        if m:
+            return _trim_event_title(m.group(1)) or default
+    # 2. Strip the leading scheduling verb (longest prefixes first)
+    for prefix in (
+        "schedule a meeting", "schedule an event", "schedule a reminder",
+        "set up a meeting", "set up an event", "set up a reminder", "set up",
+        "set a reminder", "set a meeting", "set an event", "set a",
+        "book a meeting", "book an event", "book a", "book",
+        "add a meeting", "add an event", "add a reminder", "add a", "add",
+        "create a meeting", "create an event", "create a reminder", "create a",
+        "plan a meeting", "plan an event", "plan",
+        "remind me to", "remind me about", "remind me of", "remind me",
+        "schedule", "create", "remind",
+    ):
+        idx = lower.find(prefix)
+        if idx != -1:
+            candidate = message[idx + len(prefix):].strip(".,:!? ")
+            title = _trim_event_title(candidate)
+            if title:
+                return title
             return default
     return default
 
@@ -113,6 +177,29 @@ def extract_date(message: str) -> str | None:
         return (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
     if "today" in lower or "now" in lower:
         return datetime.now().strftime("%Y-%m-%d")
+    # ISO YYYY-MM-DD
+    match = re.search(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", message)
+    if match:
+        try:
+            year, month, day = (int(g) for g in match.groups())
+            return datetime(year, month, day).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    # "due this friday" / "next monday" / "coming friday"
+    weekday_names = [
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    ]
+    match = re.search(
+        r"\b(?:this|next|coming)?\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+        lower,
+    )
+    if match:
+        today = datetime.now()
+        target = weekday_names.index(match.group(1))
+        delta = (target - today.weekday()) % 7
+        if delta == 0:
+            delta = 7
+        return (today + timedelta(days=delta)).strftime("%Y-%m-%d")
     match = re.search(
         r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})",
         lower,

@@ -60,16 +60,23 @@ class TaskTool(BaseTool):
             if not valid:
                 return err
             priority = extract_priority(context.message)
-            due_date = extract_date(context.message) or "Not set"
+            due_date = extract_date(context.message)
             task_body = {"title": title, "status": "todo"}
             if context.project_id:
                 task_body["project_id"] = int(context.project_id)
+            if due_date:
+                task_body["deadline"] = due_date
+            if self._wants_self_assign(context.message):
+                me = await self._client.get("/auth/me", auth_token=context.user_auth_token)
+                my_id = (me.get("data") or {}).get("id")
+                if my_id:
+                    task_body["assigned_to_id"] = my_id
             data = await self._client.post("/tasks", json_body=task_body, auth_token=context.user_auth_token)
             resp = APIResponse(**data)
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, {
                 "priority": priority.title(),
-                "due_date": due_date,
+                "due_date": due_date or "Not set",
             })
             elapsed = round((time.monotonic() - start) * 1000, 2)
             logger.info("TaskTool executed", intent=intent.value, title=title, priority=priority, endpoint="POST /tasks", elapsed_ms=elapsed)
@@ -193,6 +200,13 @@ class TaskTool(BaseTool):
 
     def name(self) -> str:
         return "TaskTool"
+
+    def _wants_self_assign(self, message: str) -> bool:
+        lower = " " + message.lower() + " "
+        for phrase in ("assigned to me", "assign me", "to me", "for me", "my task", "add me"):
+            if phrase in lower:
+                return True
+        return False
 
     def _extract_assignee(self, message: str) -> str:
         """Fallback: pull a person's name from 'assign X to Y' style text."""
