@@ -276,7 +276,7 @@ class TestToolMockResponses:
         result = await tool.execute(make_context("Delete task API Integration"), IntentType.DELETE_TASK)
         assert "deleted successfully" in result.lower()
         assert "API Integration" in result
-        _mock_backend_client.delete.assert_called_once_with("/tasks/t1")
+        _mock_backend_client.delete.assert_called_once_with("/tasks/t1", auth_token=None)
 
     # ── Task backed actions ─────────────────────────────────────────────
 
@@ -691,13 +691,14 @@ class TestToolBackendIntegration:
         _mock_backend_client.post.assert_called_once_with(
             "/projects",
             json_body={"name": "BuildTrack", "description": ""},
+            auth_token=None,
         )
 
     @pytest.mark.asyncio
     async def test_show_projects_calls_get_projects(self, _mock_backend_client) -> None:
         tool = ProjectTool()
         await tool.execute(make_context("Show projects"), IntentType.SHOW_PROJECTS)
-        _mock_backend_client.get.assert_called_once_with("/projects")
+        _mock_backend_client.get.assert_called_once_with("/projects", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_create_task_calls_post_tasks(self, _mock_backend_client) -> None:
@@ -710,13 +711,13 @@ class TestToolBackendIntegration:
         _mock_backend_client.get.return_value = {"success": True, "data": [{"id": "t1", "title": "Test"}]}
         tool = TaskTool()
         await tool.execute(make_context("Complete task Test"), IntentType.COMPLETE_TASK)
-        _mock_backend_client.put.assert_called_once_with("/tasks/t1", json_body={"status": "completed"})
+        _mock_backend_client.put.assert_called_once_with("/tasks/t1", json_body={"status": "completed"}, auth_token=None)
 
     @pytest.mark.asyncio
     async def test_show_overdue_calls_get_overdue(self, _mock_backend_client) -> None:
         tool = TaskTool()
         await tool.execute(make_context("Show overdue tasks"), IntentType.SHOW_OVERDUE)
-        _mock_backend_client.get.assert_called_once_with("/tasks/overdue")
+        _mock_backend_client.get.assert_called_once_with("/tasks/overdue", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_add_meeting_calls_post_via_meeting_client(self, _mock_meeting_client) -> None:
@@ -736,7 +737,7 @@ class TestToolBackendIntegration:
     async def test_show_notifications_calls_get_notifications(self, _mock_backend_client) -> None:
         tool = NotificationTool()
         await tool.execute(make_context("Show notifications"), IntentType.SHOW_NOTIFICATIONS)
-        _mock_backend_client.get.assert_called_once_with("/notifications")
+        _mock_backend_client.get.assert_called_once_with("/notifications", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_create_notification_calls_post_notifications(self, _mock_backend_client) -> None:
@@ -752,22 +753,54 @@ class TestToolBackendIntegration:
         }
         tool = DashboardTool()
         await tool.execute(make_context("Focus"), IntentType.FOCUS_TODAY)
-        _mock_backend_client.get.assert_called_once_with("/dashboard/summary")
+        _mock_backend_client.get.assert_called_once_with("/dashboard/summary", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_delete_project_calls_delete_projects(self, _mock_backend_client) -> None:
         tool = ProjectTool()
         await tool.execute(make_context("Delete project BuildTrack"), IntentType.DELETE_PROJECT)
-        _mock_backend_client.delete.assert_called_once_with("/projects/BuildTrack")
+        _mock_backend_client.delete.assert_called_once_with("/projects/BuildTrack", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_delete_task_calls_delete_tasks(self, _mock_backend_client) -> None:
         tool = TaskTool()
         await tool.execute(make_context("Delete task t-123"), IntentType.DELETE_TASK)
-        _mock_backend_client.delete.assert_called_once_with("/tasks/t-123")
+        _mock_backend_client.delete.assert_called_once_with("/tasks/t-123", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_mark_notification_read_calls_put(self, _mock_backend_client) -> None:
         tool = NotificationTool()
         await tool.execute(make_context("Mark notification n-45 as read"), IntentType.MARK_AS_READ)
-        _mock_backend_client.put.assert_called_once_with("/notifications/n-45/read")
+        _mock_backend_client.put.assert_called_once_with("/notifications/n-45/read", auth_token=None)
+
+    @pytest.mark.asyncio
+    async def test_create_task_propagates_user_auth_token(self, _mock_backend_client) -> None:
+        tool = TaskTool()
+        _mock_backend_client.post.return_value = {
+            "status": "success", "message": "Task created.",
+            "data": {"id": 99, "title": "Test task", "status": "todo"},
+        }
+        ctx = ExecutionContext(
+            message="Create task Test task",
+            user_auth_token="user-jwt-token",
+        )
+        await tool.execute(ctx, IntentType.CREATE_TASK)
+        _mock_backend_client.post.assert_called_once_with(
+            "/tasks",
+            json_body={"title": "Test task", "status": "todo"},
+            auth_token="user-jwt-token",
+        )
+
+    @pytest.mark.asyncio
+    async def test_add_reminder_posts_to_meetings_api(self, _mock_meeting_client) -> None:
+        tool = PlannerTool()
+        result = await tool.execute(
+            make_context("Set a reminder for Standup reminder on 2026-08-01"),
+            IntentType.ADD_REMINDER,
+        )
+        assert "Reminder set successfully" in result
+        _mock_meeting_client.post.assert_called_once_with(
+            "/api/v1/meetings",
+            json_body={"title": "Standup", "type": "reminder", "date": "2026-07-15", "start_time": "10:00"},
+            auth_token=None,
+        )

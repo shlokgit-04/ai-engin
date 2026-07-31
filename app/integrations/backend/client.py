@@ -84,17 +84,17 @@ class BackendClient:
             return {"Authorization": f"Bearer {self._token}"}
         return {}
 
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self._request("GET", path, params=params)
+    async def get(self, path: str, params: dict[str, Any] | None = None, auth_token: str | None = None) -> dict[str, Any]:
+        return await self._request("GET", path, params=params, user_token=auth_token)
 
     async def post(self, path: str, json_body: dict[str, Any] | None = None, auth_token: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self._request("POST", path, body=json_body, params=params)
+        return await self._request("POST", path, body=json_body, params=params, user_token=auth_token)
 
     async def put(self, path: str, json_body: dict[str, Any] | None = None, auth_token: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self._request("PUT", path, body=json_body, params=params)
+        return await self._request("PUT", path, body=json_body, params=params, user_token=auth_token)
 
     async def delete(self, path: str, auth_token: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self._request("DELETE", path, params=params)
+        return await self._request("DELETE", path, params=params, user_token=auth_token)
 
     async def _request(
         self,
@@ -102,6 +102,7 @@ class BackendClient:
         path: str,
         params: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
+        user_token: str | None = None,
     ) -> dict[str, Any]:
         url = f"{self._base_url}{path}"
         last_exc: Exception | None = None
@@ -109,11 +110,16 @@ class BackendClient:
         for attempt in range(self._max_retries + 1):
             start = time.monotonic()
             try:
-                token = await self._ensure_auth()
+                if user_token:
+                    token = user_token
+                    headers = {"Authorization": f"Bearer {token}"}
+                else:
+                    token = await self._ensure_auth()
+                    headers = {"Authorization": f"Bearer {token}"}
                 response = await self._client.request(
                     method=method,
                     url=url,
-                    headers={"Authorization": f"Bearer {token}"},
+                    headers=headers,
                     params=params,
                     json=body,
                 )
@@ -146,6 +152,16 @@ class BackendClient:
                 status_code=response.status_code,
                 elapsed_ms=elapsed,
             )
+
+            if response.status_code in (401, 403) and user_token:
+                logger.warning("Backend rejected user token; falling back to service auth", path=path)
+                user_token = None
+                last_exc = BackendClientError(
+                    f"Auth error with user token: {method} {path} returned {response.status_code}",
+                    status_code=response.status_code,
+                    response_body=response.text,
+                )
+                continue
 
             if response.status_code == 404:
                 raise BackendNotFoundError(

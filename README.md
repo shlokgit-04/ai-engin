@@ -172,13 +172,13 @@ The Agent layer is the new orchestration boundary. Each agent is a self-containe
 
 | Agent | Categories | Behaviour |
 |---|---|---|
-| **KnowledgeAgent** | `GENERAL_CHAT`, `COMPANY_KNOWLEDGE`, `DOCUMENT_QUERY`, `UNKNOWN` | Delegates to the `ExecutionPipeline` (Gemini) or `DocumentIntelligencePipeline` (Ollama). The only agent with real logic today. |
-| **PlannerAgent** | `DOCUMENT_UPLOAD`, `IMAGE_ANALYSIS` | Placeholder — returns "Feature planned for upcoming implementation." |
-| **MeetingAgent** | `MEETING` | Placeholder |
-| **TaskAgent** | `TASK_ASSISTANT` | Placeholder |
-| **FinanceAgent** | `FINANCE` | Placeholder |
-| **RecommendationAgent** | `RECOMMENDATION` | Placeholder |
-| **NotificationAgent** | — | Placeholder (reserved for push/alert sub-system) |
+| **KnowledgeAgent** | `GENERAL_CHAT`, `COMPANY_KNOWLEDGE`, `DOCUMENT_QUERY`, `UNKNOWN` | Delegates to the `ExecutionPipeline` (Gemini) or `DocumentIntelligencePipeline` (Ollama). |
+| **PlannerAgent** | `DOCUMENT_UPLOAD`, `IMAGE_ANALYSIS` | Delegates to the `ExecutionPipeline` via the orchestrator; uploads/analysis are handled by the pipeline fallback. |
+| **MeetingAgent** | `MEETING` | Route via `ToolRouter` to the MeetingTool when the intent is a meeting action. |
+| **TaskAgent** | `TASK_ASSISTANT` | Route via `ToolRouter` to the TaskTool when the intent is a task action. |
+| **FinanceAgent** | `FINANCE` | Fallback to the `ExecutionPipeline` (LLM) when no tool intent matches. |
+| **RecommendationAgent** | `RECOMMENDATION` | Fallback to the `ExecutionPipeline` (LLM) when no tool intent matches. |
+| **NotificationAgent** | — | Reserved for push/alert sub-system. |
 
 The `AIOrchestrator` no longer dispatches branches directly. It classifies the request, selects the matching agent via `_select_agent()`, and calls `agent.execute()`. This gives every enterprise domain its own isolation boundary — Finance logic lives in `FinanceAgent`, Meeting logic in `MeetingAgent`, etc. — without coupling to a monolithic pipeline.
 

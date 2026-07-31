@@ -44,7 +44,7 @@ class DashboardTool(BaseTool):
 
     async def _route(self, context: ExecutionContext, intent: IntentType) -> str:
         start = time.monotonic()
-        data = await self._client.get("/dashboard/summary")
+        data = await self._client.get("/dashboard/summary", auth_token=context.user_auth_token)
         resp = DashboardResponse(**data)
         d = resp.data
 

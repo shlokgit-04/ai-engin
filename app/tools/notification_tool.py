@@ -54,7 +54,7 @@ class NotificationTool(BaseTool):
         start = time.monotonic()
 
         if intent == IntentType.SHOW_NOTIFICATIONS:
-            data = await self._client.get("/notifications")
+            data = await self._client.get("/notifications", auth_token=context.user_auth_token)
             resp = NotificationListResponse(**data)
             notifications = resp.data or []
             elapsed = round((time.monotonic() - start) * 1000, 2)
@@ -62,7 +62,7 @@ class NotificationTool(BaseTool):
             return self._formatter.format(intent, {"notifications": [n.model_dump() for n in notifications]})
 
         if intent == IntentType.CREATE_NOTIFICATION:
-            data = await self._client.post("/notifications", json_body={"text": context.message})
+            data = await self._client.post("/notifications", json_body={"text": context.message}, auth_token=context.user_auth_token)
             resp = APIResponse(**data)
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, resp.model_dump())
@@ -74,7 +74,7 @@ class NotificationTool(BaseTool):
             nid = extract_notification_id(context.message)
             if not nid:
                 return "I couldn't determine which notification you want to mark as read."
-            data = await self._client.put(f"/notifications/{nid}/read")
+            data = await self._client.put(f"/notifications/{nid}/read", auth_token=context.user_auth_token)
             resp = APIResponse(**data)
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, resp.model_dump())

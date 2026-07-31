@@ -73,7 +73,12 @@ MEETING_CANCELLED = "Meeting has been cancelled successfully."
 
 MEETING_RESCHEDULED = "Meeting has been rescheduled successfully."
 
-REMINDER_SET = "Reminder set successfully."
+REMINDER_SET = (
+    "Reminder set successfully.\n\n"
+    "Title: {title}\n"
+    "Date: {date}\n"
+    "Time: {time}"
+)
 
 TODAY_SCHEDULE = "Today you have {meeting_count} Meetings, {deadline_count} Deadlines, {reminder_count} Reminders."
 

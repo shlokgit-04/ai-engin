@@ -11,14 +11,14 @@ class ChatAgent(BaseAgent):
     def __init__(self, orchestrator: AIOrchestrator) -> None:
         self._orchestrator = orchestrator
 
-    async def run(self, input: str, **kwargs) -> str:
+    async def run(self, input: str, user_auth_token: str | None = None, **kwargs) -> str:
         logger.info("ChatAgent processing", input_length=len(input))
-        context = ExecutionContext(message=input)
+        context = ExecutionContext(message=input, user_auth_token=user_auth_token)
         return await self._orchestrator.route_request(context)
 
-    async def run_stream(self, input: str, **kwargs) -> AsyncIterator[str]:
+    async def run_stream(self, input: str, user_auth_token: str | None = None, **kwargs) -> AsyncIterator[str]:
         logger.info("ChatAgent stream processing", input_length=len(input))
-        context = ExecutionContext(message=input)
+        context = ExecutionContext(message=input, user_auth_token=user_auth_token)
         async for chunk in self._orchestrator.route_request_stream(context):
             yield chunk
 

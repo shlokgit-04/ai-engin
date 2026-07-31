@@ -74,13 +74,23 @@ def extract_task_id(message: str, context: ExecutionContext | None = None) -> st
 
 
 def extract_event_title(message: str, default: str = "Event") -> str:
-    for prefix in ("schedule", "add", "book", "set up", "create"):
-        if prefix in message.lower():
-            idx = message.lower().index(prefix) + len(prefix)
+    lower = message.lower()
+    for prefix in ("schedule", "add", "book", "set up", "set", "create", "remind me", "remind"):
+        if prefix in lower:
+            idx = lower.index(prefix) + len(prefix)
             candidate = message[idx:].strip(".,!? ")
-            for skip in (" a ", " an ", " meeting ", " event "):
-                if candidate.startswith(skip.strip()):
-                    candidate = candidate[len(skip.strip()):].strip()
+            words = candidate.split()
+            cleaned = []
+            skip = {"a", "an", "the", "me", "for", "to", "about", "of", "on", "at"}
+            for w in words:
+                wl = w.strip(".,!?#").lower()
+                if wl in skip:
+                    continue
+                if wl in ("meeting", "event", "reminder"):
+                    continue
+                cleaned.append(w)
+                break
+            candidate = " ".join(cleaned).strip().strip(".,!? ")
             if candidate:
                 return candidate
             return default

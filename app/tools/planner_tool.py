@@ -43,36 +43,62 @@ class _MeetingClient:
     def _headers(self, token: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {token}"}
 
-    async def get(self, path: str, params: dict | None = None) -> dict:
-        token = await self._ensure_auth()
+    async def _resolve_token(self, auth_token: str | None) -> str:
+        if auth_token:
+            return auth_token
+        return await self._ensure_auth()
+
+    async def get(self, path: str, params: dict | None = None, auth_token: str | None = None) -> dict:
+        token = await self._resolve_token(auth_token)
         resp = await self._client.get(
             f"{self._base}{path}", headers=self._headers(token), params=params,
         )
+        if resp.status_code in (401, 403) and auth_token:
+            token = await self._ensure_auth()
+            resp = await self._client.get(
+                f"{self._base}{path}", headers=self._headers(token), params=params,
+            )
         resp.raise_for_status()
         return resp.json()
 
-    async def post(self, path: str, json_body: dict | None = None, params: dict | None = None) -> dict:
-        token = await self._ensure_auth()
+    async def post(self, path: str, json_body: dict | None = None, params: dict | None = None, auth_token: str | None = None) -> dict:
+        token = await self._resolve_token(auth_token)
         resp = await self._client.post(
             f"{self._base}{path}", headers=self._headers(token),
             json=json_body, params=params,
         )
+        if resp.status_code in (401, 403) and auth_token:
+            token = await self._ensure_auth()
+            resp = await self._client.post(
+                f"{self._base}{path}", headers=self._headers(token),
+                json=json_body, params=params,
+            )
         resp.raise_for_status()
         return resp.json()
 
-    async def put(self, path: str, json_body: dict | None = None) -> dict:
-        token = await self._ensure_auth()
+    async def put(self, path: str, json_body: dict | None = None, auth_token: str | None = None) -> dict:
+        token = await self._resolve_token(auth_token)
         resp = await self._client.put(
             f"{self._base}{path}", headers=self._headers(token), json=json_body,
         )
+        if resp.status_code in (401, 403) and auth_token:
+            token = await self._ensure_auth()
+            resp = await self._client.put(
+                f"{self._base}{path}", headers=self._headers(token), json=json_body,
+            )
         resp.raise_for_status()
         return resp.json()
 
-    async def delete(self, path: str) -> dict:
-        token = await self._ensure_auth()
+    async def delete(self, path: str, auth_token: str | None = None) -> dict:
+        token = await self._resolve_token(auth_token)
         resp = await self._client.delete(
             f"{self._base}{path}", headers=self._headers(token),
         )
+        if resp.status_code in (401, 403) and auth_token:
+            token = await self._ensure_auth()
+            resp = await self._client.delete(
+                f"{self._base}{path}", headers=self._headers(token),
+            )
         resp.raise_for_status()
         return resp.json()
 
@@ -185,13 +211,13 @@ class PlannerTool(BaseTool):
         # 2. Extract a clean title and search
         title = self._extract_meeting_title_from_text(lower)
         if title:
-            data = await self._client.get("/api/v1/meetings", params={"search": title})
+            data = await self._client.get("/api/v1/meetings", params={"search": title}, auth_token=None)
             meetings = data.get("data", [])
             if not meetings:
                 # try each word
                 for word in title.split():
                     if len(word) > 2:
-                        data = await self._client.get("/api/v1/meetings", params={"search": word})
+                        data = await self._client.get("/api/v1/meetings", params={"search": word}, auth_token=None)
                         meetings = data.get("data", [])
                         if meetings:
                             break
@@ -291,7 +317,7 @@ class PlannerTool(BaseTool):
 
     async def _find_user_by_name(self, name: str) -> int | None:
         """Search users by name and return matching user ID."""
-        data = await self._client.get("/api/v1/users")
+        data = await self._client.get("/api/v1/users", auth_token=ctx.user_auth_token)
         users = data.get("data", [])
         lower_name = name.lower()
         for u in users:
@@ -332,7 +358,7 @@ class PlannerTool(BaseTool):
         params: dict = {}
         if filter_:
             params["filter"] = filter_
-        data = await self._client.get("/api/v1/meetings", params=params)
+        data = await self._client.get("/api/v1/meetings", params=params, auth_token=ctx.user_auth_token)
         meetings = data.get("data", [])
         if not meetings:
             return "You have no meetings at the moment."
@@ -353,12 +379,18 @@ class PlannerTool(BaseTool):
             return err
         event_date = extract_date(ctx.message)
         event_time = extract_time(ctx.message)
-        body: dict = {"title": title}
+        body: dict = {"title": title, "type": "meeting"}
         if event_date:
             body["date"] = event_date
         if event_time:
             body["start_time"] = event_time
-        data = await self._client.post("/api/v1/meetings", json_body=body)
+            try:
+                hour, minute = event_time.split(":")
+                end_hour = (int(hour) + 1) % 24
+                body["end_time"] = f"{end_hour:02d}:{minute or '00'}"
+            except (ValueError, TypeError):
+                pass
+        data = await self._client.post("/api/v1/meetings", json_body=body, auth_token=ctx.user_auth_token)
         meeting = data.get("data", {})
         suggestion = get_suggestion("add_meeting")
         result = self._formatter.format(IntentType.ADD_MEETING, {
@@ -398,7 +430,7 @@ class PlannerTool(BaseTool):
         mid = await self._resolve_meeting_id(ctx.message)
         if mid is None:
             return "Which meeting would you like to cancel? Please specify the meeting name or ID."
-        await self._client.delete(f"/api/v1/meetings/{mid}")
+        await self._client.delete(f"/api/v1/meetings/{mid}", auth_token=ctx.user_auth_token)
         suggestion = get_suggestion("cancel_meeting")
         result = f"Meeting (ID: {mid}) has been cancelled."
         return f"{result}\n\n{suggestion}" if suggestion else result
@@ -416,7 +448,7 @@ class PlannerTool(BaseTool):
             body["start_time"] = new_time
         if not body:
             return "Please specify a new date or time for the meeting."
-        await self._client.put(f"/api/v1/meetings/{mid}", json_body=body)
+        await self._client.put(f"/api/v1/meetings/{mid}", json_body=body, auth_token=ctx.user_auth_token)
         return f"Meeting (ID: {mid}) has been rescheduled."
 
     async def _rename_meeting(self, ctx: ExecutionContext) -> str:
@@ -426,7 +458,7 @@ class PlannerTool(BaseTool):
         new_name = self._extract_rename_target(ctx.message)
         if not new_name:
             return "What should the new name be? Use 'rename meeting X to Y'."
-        await self._client.put(f"/api/v1/meetings/{mid}", json_body={"title": new_name})
+        await self._client.put(f"/api/v1/meetings/{mid}", json_body={"title": new_name}, auth_token=ctx.user_auth_token)
         return f"Meeting (ID: {mid}) renamed to '{new_name}'."
 
     def _extract_rename_target(self, message: str) -> str:
@@ -445,7 +477,7 @@ class PlannerTool(BaseTool):
         mid = await self._resolve_meeting_id(ctx.message)
         if mid is None:
             return "Which meeting? Please specify the meeting name or ID."
-        data = await self._client.get(f"/api/v1/meetings/{mid}")
+        data = await self._client.get(f"/api/v1/meetings/{mid}", auth_token=ctx.user_auth_token)
         m = data.get("data", {})
         lines = [f"**{m.get('title', 'Meeting')}** (ID: {m['id']})"]
         if m.get("date"):
@@ -471,7 +503,7 @@ class PlannerTool(BaseTool):
         uid = await self._resolve_user_id(ctx.message)
         if uid is None:
             return "Who would you like to add? Please specify a participant name."
-        await self._client.post(f"/api/v1/meetings/{mid}/participants", params={"user_id": uid})
+        await self._client.post(f"/api/v1/meetings/{mid}/participants", params={"user_id": uid}, auth_token=ctx.user_auth_token)
         return f"Participant (user ID: {uid}) added to meeting (ID: {mid})."
 
     async def _remove_participant(self, ctx: ExecutionContext) -> str:
@@ -481,7 +513,7 @@ class PlannerTool(BaseTool):
         uid = await self._resolve_user_id(ctx.message)
         if uid is None:
             return "Who would you like to remove? Please specify a participant name."
-        await self._client.post(f"/api/v1/meetings/{mid}/participants/remove", params={"user_id": uid})
+        await self._client.post(f"/api/v1/meetings/{mid}/participants/remove", params={"user_id": uid}, auth_token=ctx.user_auth_token)
         return f"Participant (user ID: {uid}) removed from meeting (ID: {mid})."
 
     async def _upload_mom(self, ctx: ExecutionContext) -> str:
@@ -492,14 +524,14 @@ class PlannerTool(BaseTool):
         valid, err = validate_not_empty(mom_text, "MOM content")
         if not valid:
             return "Please provide the minutes of meeting content."
-        await self._client.post(f"/api/v1/meetings/{mid}/mom", json_body={"summary": mom_text})
+        await self._client.post(f"/api/v1/meetings/{mid}/mom", json_body={"summary": mom_text}, auth_token=ctx.user_auth_token)
         return f"MOM uploaded for meeting (ID: {mid})."
 
     async def _analyze_mom(self, ctx: ExecutionContext) -> str:
         mid = await self._resolve_meeting_id(ctx.message)
         if mid is None:
             return "Which meeting? Please specify the meeting name or ID."
-        data = await self._client.post(f"/api/v1/meetings/{mid}/mom/analyze")
+        data = await self._client.post(f"/api/v1/meetings/{mid}/mom/analyze", auth_token=ctx.user_auth_token)
         if not data.get("success"):
             return f"Analysis failed: {data.get('message', 'Unknown error')}"
         analysis = data.get("data", {})
@@ -528,7 +560,7 @@ class PlannerTool(BaseTool):
         mid = await self._resolve_meeting_id(ctx.message)
         if mid is None:
             return "Which meeting? Please specify the meeting name or ID."
-        data = await self._client.get(f"/api/v1/meetings/{mid}/extracted-tasks")
+        data = await self._client.get(f"/api/v1/meetings/{mid}/extracted-tasks", auth_token=ctx.user_auth_token)
         tasks = data.get("data", [])
         if not tasks:
             return f"No extracted tasks for meeting (ID: {mid})."
@@ -545,7 +577,7 @@ class PlannerTool(BaseTool):
         task_ids = self._extract_task_ids_from_text(ctx.message)
         if not task_ids:
             # approve all pending
-            data = await self._client.get(f"/api/v1/meetings/{mid}/extracted-tasks")
+            data = await self._client.get(f"/api/v1/meetings/{mid}/extracted-tasks", auth_token=ctx.user_auth_token)
             tasks = data.get("data", [])
             task_ids = [t["id"] for t in tasks if t.get("status") == "pending"]
         if not task_ids:
@@ -553,7 +585,7 @@ class PlannerTool(BaseTool):
         results = []
         for tid in task_ids:
             try:
-                resp = await self._client.post(f"/api/v1/meetings/{mid}/extracted-tasks/{tid}/approve")
+                resp = await self._client.post(f"/api/v1/meetings/{mid}/extracted-tasks/{tid}/approve", auth_token=ctx.user_auth_token)
                 results.append(f"Task {tid}: approved")
             except Exception as exc:
                 results.append(f"Task {tid}: failed ({exc})")
@@ -565,7 +597,7 @@ class PlannerTool(BaseTool):
             return "Which meeting? Please specify the meeting name or ID."
         task_ids = self._extract_task_ids_from_text(ctx.message)
         if not task_ids:
-            data = await self._client.get(f"/api/v1/meetings/{mid}/extracted-tasks")
+            data = await self._client.get(f"/api/v1/meetings/{mid}/extracted-tasks", auth_token=ctx.user_auth_token)
             tasks = data.get("data", [])
             task_ids = [t["id"] for t in tasks if t.get("status") == "pending"]
         if not task_ids:
@@ -573,7 +605,7 @@ class PlannerTool(BaseTool):
         results = []
         for tid in task_ids:
             try:
-                resp = await self._client.post(f"/api/v1/meetings/{mid}/extracted-tasks/{tid}/reject")
+                resp = await self._client.post(f"/api/v1/meetings/{mid}/extracted-tasks/{tid}/reject", auth_token=ctx.user_auth_token)
                 results.append(f"Task {tid}: rejected")
             except Exception as exc:
                 results.append(f"Task {tid}: failed ({exc})")
@@ -583,21 +615,21 @@ class PlannerTool(BaseTool):
         mid = await self._resolve_meeting_id(ctx.message)
         if mid is None:
             return "Which meeting would you like to accept?"
-        data = await self._client.post(f"/api/v1/meetings/{mid}/accept")
+        data = await self._client.post(f"/api/v1/meetings/{mid}/accept", auth_token=ctx.user_auth_token)
         return data.get("message", "Meeting accepted.")
 
     async def _decline_meeting(self, ctx: ExecutionContext) -> str:
         mid = await self._resolve_meeting_id(ctx.message)
         if mid is None:
             return "Which meeting would you like to decline?"
-        data = await self._client.post(f"/api/v1/meetings/{mid}/decline")
+        data = await self._client.post(f"/api/v1/meetings/{mid}/decline", auth_token=ctx.user_auth_token)
         return data.get("message", "Meeting declined.")
 
     async def _who_accepted_declined(self, ctx: ExecutionContext, status_filter: str) -> str:
         mid = await self._resolve_meeting_id(ctx.message)
         if mid is None:
             return "Which meeting? Please specify the meeting name or ID."
-        data = await self._client.get(f"/api/v1/meetings/{mid}")
+        data = await self._client.get(f"/api/v1/meetings/{mid}", auth_token=ctx.user_auth_token)
         meeting = data.get("data", {})
         participants = meeting.get("participants", [])
         matched = [p for p in participants if p.get("status") == status_filter]
@@ -610,7 +642,7 @@ class PlannerTool(BaseTool):
         mid = await self._resolve_meeting_id(ctx.message)
         if mid is None:
             return "Which meeting? Please specify the meeting name or ID."
-        data = await self._client.get(f"/api/v1/meetings/{mid}/timeline")
+        data = await self._client.get(f"/api/v1/meetings/{mid}/timeline", auth_token=ctx.user_auth_token)
         events = data.get("data", [])
         if not events:
             return f"No timeline events for meeting (ID: {mid})."
@@ -624,7 +656,7 @@ class PlannerTool(BaseTool):
         mid = await self._resolve_meeting_id(ctx.message)
         if mid is None:
             return "Which meeting? Please specify the meeting name or ID."
-        data = await self._client.get(f"/api/v1/meetings/{mid}")
+        data = await self._client.get(f"/api/v1/meetings/{mid}", auth_token=ctx.user_auth_token)
         meeting = data.get("data", {})
         field_map = {
             "decisions": "mom_decisions",
@@ -643,12 +675,22 @@ class PlannerTool(BaseTool):
         if not valid:
             return err
         event_date = extract_date(ctx.message)
+        event_time = extract_time(ctx.message)
+        body: dict = {"title": title, "type": "reminder"}
+        if event_date:
+            body["date"] = event_date
+        if event_time:
+            body["start_time"] = event_time
+        data = await self._client.post("/api/v1/meetings", json_body=body, auth_token=ctx.user_auth_token)
+        meeting = data.get("data", {})
         suggestion = get_suggestion("add_reminder")
         result = self._formatter.format(IntentType.ADD_REMINDER, {
             "title": title,
             "date": event_date or "Not set",
+            "time": event_time or "TBD",
+            "id": meeting.get("id"),
         })
-        logger.info("PlannerTool reminder set", title=title, date=event_date)
+        logger.info("PlannerTool reminder set", title=title, date=event_date, time=event_time, meeting_id=meeting.get("id"))
         return f"{result}\n\n{suggestion}" if suggestion else result
 
     def name(self) -> str:

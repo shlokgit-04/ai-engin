@@ -166,7 +166,11 @@ class ResponseFormatter:
         )
 
     def _format_add_reminder(self, data: dict[str, Any]) -> str:
-        return tpl.REMINDER_SET
+        return tpl.REMINDER_SET.format(
+            title=data.get("title", "Reminder"),
+            date=data.get("date", "Not set"),
+            time=data.get("time", "TBD"),
+        )
 
     # ── Meeting Intelligence ──────────────────────────────────────────────
 

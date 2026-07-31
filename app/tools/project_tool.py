@@ -59,7 +59,7 @@ class ProjectTool(BaseTool):
             valid, err = validate_not_empty(name, "Project name")
             if not valid:
                 return err
-            data = await self._client.post("/projects", json_body={"name": name, "description": ""})
+            data = await self._client.post("/projects", json_body={"name": name, "description": ""}, auth_token=context.user_auth_token)
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, {"name": name, "status": "Active"})
             elapsed = round((time.monotonic() - start) * 1000, 2)
@@ -67,7 +67,7 @@ class ProjectTool(BaseTool):
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.SHOW_PROJECTS:
-            data = await self._client.get("/projects")
+            data = await self._client.get("/projects", auth_token=context.user_auth_token)
             resp = ProjectListResponse(**data)
             projects = resp.data or []
             elapsed = round((time.monotonic() - start) * 1000, 2)
@@ -76,7 +76,7 @@ class ProjectTool(BaseTool):
 
         if intent == IntentType.SHOW_PROJECT_STATUS:
             pid = context.project_id or "default"
-            data = await self._client.get(f"/projects/{pid}")
+            data = await self._client.get(f"/projects/{pid}", auth_token=context.user_auth_token)
             project = Project(**data)
             elapsed = round((time.monotonic() - start) * 1000, 2)
             logger.info("ProjectTool executed", intent=intent.value, project_id=pid, endpoint=f"GET /projects/{pid}", elapsed_ms=elapsed)
@@ -87,7 +87,7 @@ class ProjectTool(BaseTool):
             if not pid:
                 return "I couldn't determine which project you want to delete."
             name = pid
-            await self._client.delete(f"/projects/{pid}")
+            await self._client.delete(f"/projects/{pid}", auth_token=context.user_auth_token)
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, {"name": name})
             elapsed = round((time.monotonic() - start) * 1000, 2)
@@ -100,7 +100,7 @@ class ProjectTool(BaseTool):
             valid, err = validate_not_empty(new_name, "New project name")
             if not valid:
                 return err
-            data = await self._client.put(f"/projects/{pid}", json_body={"name": new_name})
+            data = await self._client.put(f"/projects/{pid}", json_body={"name": new_name}, auth_token=context.user_auth_token)
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, {"name": new_name})
             elapsed = round((time.monotonic() - start) * 1000, 2)
@@ -111,7 +111,7 @@ class ProjectTool(BaseTool):
             pid = context.project_id
             member_name = context.metadata.get("member_name") or context.metadata.get("assignee", "")
             if not pid:
-                projects_data = await self._client.get("/projects")
+                projects_data = await self._client.get("/projects", auth_token=context.user_auth_token)
                 projects_resp = ProjectListResponse(**projects_data)
                 projects = projects_resp.data or []
                 msg_lower = context.message.lower()
@@ -125,7 +125,7 @@ class ProjectTool(BaseTool):
                 if not matched:
                     return "I couldn't find a project to add a member to."
                 pid = str(matched.id)
-            users_data = await self._client.get("/users")
+            users_data = await self._client.get("/users", auth_token=context.user_auth_token)
             users_resp = APIResponse(**users_data)
             users = users_resp.data or []
             matched_user = None
@@ -140,7 +140,7 @@ class ProjectTool(BaseTool):
             if not matched_user:
                 return "I couldn't find the user to add as a member."
             user_id = matched_user.get("id")
-            await self._client.post(f"/projects/{pid}/members/{user_id}")
+            await self._client.post(f"/projects/{pid}/members/{user_id}", auth_token=context.user_auth_token)
             suggestion = get_suggestion(intent.value)
             user_display = matched_user.get("full_name") or matched_user.get("name", "user")
             result = self._formatter.format(intent, {"project_name": pid, "user_name": user_display})
@@ -152,7 +152,7 @@ class ProjectTool(BaseTool):
             pid = context.project_id
             member_name = context.metadata.get("member_name") or context.metadata.get("assignee", "")
             if not pid:
-                projects_data = await self._client.get("/projects")
+                projects_data = await self._client.get("/projects", auth_token=context.user_auth_token)
                 projects_resp = ProjectListResponse(**projects_data)
                 projects = projects_resp.data or []
                 msg_lower = context.message.lower()
@@ -166,7 +166,7 @@ class ProjectTool(BaseTool):
                 if not matched:
                     return "I couldn't find a project to remove a member from."
                 pid = str(matched.id)
-            users_data = await self._client.get("/users")
+            users_data = await self._client.get("/users", auth_token=context.user_auth_token)
             users_resp = APIResponse(**users_data)
             users = users_resp.data or []
             matched_user = None
@@ -181,7 +181,7 @@ class ProjectTool(BaseTool):
             if not matched_user:
                 return "I couldn't find the user to remove."
             user_id = matched_user.get("id")
-            await self._client.delete(f"/projects/{pid}/members/{user_id}")
+            await self._client.delete(f"/projects/{pid}/members/{user_id}", auth_token=context.user_auth_token)
             suggestion = get_suggestion(intent.value)
             user_display = matched_user.get("full_name") or matched_user.get("name", "user")
             result = self._formatter.format(intent, {"project_name": pid, "user_name": user_display})

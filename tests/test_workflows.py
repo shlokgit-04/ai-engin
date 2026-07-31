@@ -103,6 +103,7 @@ class TestProjectWorkflows:
         _mock_backend_client.post.assert_called_once_with(
             "/projects",
             json_body={"name": "BuildTrack", "description": ""},
+            auth_token=None,
         )
         assert "BuildTrack" in result
         assert "created" in result.lower()
@@ -173,7 +174,7 @@ class TestProjectWorkflows:
             {"success": True, "data": [{"id": "u1", "full_name": "Aryan"}]},
         ]
         result = await self._exec("Assign member", IntentType.ASSIGN_MEMBER)
-        _mock_backend_client.post.assert_called_once_with("/projects/p1/members/u1")
+        _mock_backend_client.post.assert_called_once_with("/projects/p1/members/u1", auth_token=None)
         assert "added to project" in result.lower()
 
     @pytest.mark.asyncio
@@ -183,7 +184,7 @@ class TestProjectWorkflows:
             {"success": True, "data": [{"id": "u1", "full_name": "Aryan"}]},
         ]
         result = await self._exec("Remove member", IntentType.REMOVE_MEMBER)
-        _mock_backend_client.delete.assert_called_once_with("/projects/p1/members/u1")
+        _mock_backend_client.delete.assert_called_once_with("/projects/p1/members/u1", auth_token=None)
         assert "removed from project" in result.lower()
 
 
@@ -239,7 +240,7 @@ class TestTaskWorkflows:
             "data": [{"id": "t2", "title": "Late task", "status": "overdue"}],
         }
         result = await self._exec("Show overdue")
-        _mock_backend_client.get.assert_called_once_with("/tasks/overdue")
+        _mock_backend_client.get.assert_called_once_with("/tasks/overdue", auth_token=None)
         assert "Late task" in result
 
     # ── ASSIGN ──────────────────────────────────────────────────────────
@@ -308,7 +309,7 @@ class TestTaskWorkflows:
         result = await self._exec("Delete task Backend API", IntentType.DELETE_TASK)
         assert "deleted successfully" in result.lower()
         assert "Backend API" in result
-        _mock_backend_client.delete.assert_called_once_with("/tasks/t1")
+        _mock_backend_client.delete.assert_called_once_with("/tasks/t1", auth_token=None)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -611,6 +612,7 @@ class TestParameterExtraction:
         _mock_backend_client.post.assert_called_once_with(
             "/projects",
             json_body={"name": "MyCoolApp", "description": ""},
+            auth_token=None,
         )
 
     @pytest.mark.asyncio
@@ -658,21 +660,21 @@ class TestParameterExtraction:
         _mock_backend_client.delete.return_value = {"status": "success", "message": "Deleted."}
         tool = ProjectTool()
         await tool.execute(make_context("Delete project BuildTrack"), IntentType.DELETE_PROJECT)
-        _mock_backend_client.delete.assert_called_once_with("/projects/BuildTrack")
+        _mock_backend_client.delete.assert_called_once_with("/projects/BuildTrack", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_delete_project_standalone_syntax(self, _mock_backend_client) -> None:
         _mock_backend_client.delete.return_value = {"status": "success", "message": "Deleted."}
         tool = ProjectTool()
         await tool.execute(make_context("Delete BuildTrack"), IntentType.DELETE_PROJECT)
-        _mock_backend_client.delete.assert_called_once_with("/projects/BuildTrack")
+        _mock_backend_client.delete.assert_called_once_with("/projects/BuildTrack", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_delete_project_remove_syntax(self, _mock_backend_client) -> None:
         _mock_backend_client.delete.return_value = {"status": "success", "message": "Deleted."}
         tool = ProjectTool()
         await tool.execute(make_context("Remove project Alpha"), IntentType.DELETE_PROJECT)
-        _mock_backend_client.delete.assert_called_once_with("/projects/Alpha")
+        _mock_backend_client.delete.assert_called_once_with("/projects/Alpha", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_delete_task_extracts_identifier(self, _mock_backend_client) -> None:
@@ -680,25 +682,25 @@ class TestParameterExtraction:
         _mock_backend_client.delete.return_value = {"status": "success", "message": "Deleted."}
         tool = TaskTool()
         await tool.execute(make_context("Delete task Backend API"), IntentType.DELETE_TASK)
-        _mock_backend_client.delete.assert_called_once_with("/tasks/t1")
+        _mock_backend_client.delete.assert_called_once_with("/tasks/t1", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_delete_task_with_id(self, _mock_backend_client) -> None:
         _mock_backend_client.delete.return_value = {"status": "success", "message": "Deleted."}
         tool = TaskTool()
         await tool.execute(make_context("Delete task t-123"), IntentType.DELETE_TASK)
-        _mock_backend_client.delete.assert_called_once_with("/tasks/t-123")
+        _mock_backend_client.delete.assert_called_once_with("/tasks/t-123", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_mark_notification_extracts_id(self, _mock_backend_client) -> None:
         _mock_backend_client.put.return_value = {"status": "success", "message": "OK"}
         tool = NotificationTool()
         await tool.execute(make_context("Mark notification n-123 as read"), IntentType.MARK_AS_READ)
-        _mock_backend_client.put.assert_called_once_with("/notifications/n-123/read")
+        _mock_backend_client.put.assert_called_once_with("/notifications/n-123/read", auth_token=None)
 
     @pytest.mark.asyncio
     async def test_mark_notification_read_syntax(self, _mock_backend_client) -> None:
         _mock_backend_client.put.return_value = {"status": "success", "message": "OK"}
         tool = NotificationTool()
         await tool.execute(make_context("Read notification n-45"), IntentType.MARK_AS_READ)
-        _mock_backend_client.put.assert_called_once_with("/notifications/n-45/read")
+        _mock_backend_client.put.assert_called_once_with("/notifications/n-45/read", auth_token=None)
