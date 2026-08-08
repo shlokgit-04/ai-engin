@@ -30,6 +30,7 @@ from app.tools.notification_tool import NotificationTool
 from app.tools.dashboard_tool import DashboardTool
 from app.tools.executive_tool import ExecutiveTool
 from app.models.base import BaseLLM
+from app.executive.users import match_user
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +223,7 @@ class TestToolMockResponses:
         tool = ProjectTool()
         intent = IntentType(action)
         result = await tool.execute(make_context("test"), intent)
-        assert "couldn't find" in result or "successfully" in result.lower()
+        assert "Who would you like" in result
 
     # ── Project backend actions ─────────────────────────────────────────
 
@@ -300,6 +301,25 @@ class TestToolMockResponses:
         assert "assigned" in result.lower()
         assert _mock_backend_client.put.call_args.args == ("/tasks/18",)
         assert _mock_backend_client.put.call_args.kwargs["json_body"].get("assigned_to_id") == "3"
+
+    @pytest.mark.asyncio
+    async def test_assign_task_unknown_user_rejected(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.side_effect = [
+            {"success": True, "data": [{"id": "18", "title": "Deploy build"}]},
+            {"success": True, "data": [{"id": "3", "full_name": "Aryan"}]},
+        ]
+        tool = TaskTool()
+        result = await tool.execute(make_context("Assign task Deploy build to Zzzunknown"), IntentType.ASSIGN_TASK)
+        assert "couldn't find a team member" in result
+        _mock_backend_client.put.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_change_deadline_missing_date_rejected(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.return_value = {"success": True, "data": [{"id": "t-1", "title": "Test"}]}
+        tool = TaskTool()
+        result = await tool.execute(make_context("Set deadline for Test task"), IntentType.CHANGE_DEADLINE)
+        assert "date" in result.lower()
+        _mock_backend_client.put.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_update_task_returns_formatted(self, _mock_backend_client) -> None:
@@ -853,3 +873,69 @@ class TestToolBackendIntegration:
             json_body={"title": "Standup", "type": "reminder", "date": "2026-07-15", "start_time": "10:00"},
             auth_token=None,
         )
+
+
+# ---------------------------------------------------------------------------
+# 12.  User name resolution
+# ---------------------------------------------------------------------------
+
+class TestUserResolution:
+    USERS = [
+        {"id": 5, "username": "aryan__tls", "full_name": "Aryan Telis", "email": "aryantls2024@gmail.com"},
+        {"id": 3, "username": "muneesha09", "full_name": "Nebisha Muneesha", "email": "muneesha09@gmail.com"},
+        {"id": 8, "username": "pranesh", "full_name": "Pranesh", "email": "pranesh379@gmail.com"},
+        {"id": 4, "username": "shlok_04", "full_name": "shlok", "email": "vaneshlok04@gmail.com"},
+        {"id": 1, "username": "vincent_ceo", "full_name": "Vincent CEO", "email": "vincent@nurofin.com"},
+    ]
+
+    def test_exact_full_name(self) -> None:
+        assert match_user(self.USERS, "Aryan")["id"] == 5
+        assert match_user(self.USERS, "Vincent")["id"] == 1
+        assert match_user(self.USERS, "shlok")["id"] == 4
+
+    def test_matches_second_name_token(self) -> None:
+        assert match_user(self.USERS, "Muneesha")["id"] == 3
+
+    def test_matches_email(self) -> None:
+        assert match_user(self.USERS, "aryantls2024@gmail.com")["id"] == 5
+
+    def test_fuzzy_typo(self) -> None:
+        assert match_user(self.USERS, "Pranish")["id"] == 8
+
+    def test_no_match(self) -> None:
+        assert match_user(self.USERS, "Zzzunknown") is None
+        assert match_user(self.USERS, "") is None
+
+
+# ---------------------------------------------------------------------------
+# 13.  Planner user resolution (was NameError: `ctx` undefined)
+# ---------------------------------------------------------------------------
+
+class TestPlannerUserResolution:
+
+    @pytest.mark.asyncio
+    async def test_find_user_by_name_resolves_with_token(self, _mock_meeting_client) -> None:
+        _mock_meeting_client.get.return_value = {
+            "success": True,
+            "data": [
+                {"id": 8, "username": "pranesh", "full_name": "Pranesh", "email": "pranesh379@gmail.com"},
+                {"id": 3, "username": "muneesha09", "full_name": "Nebisha Muneesha", "email": "muneesha09@gmail.com"},
+            ],
+        }
+        tool = PlannerTool()
+        ctx = ExecutionContext(message="add Pranish to meeting 5", user_auth_token="jwt-token")
+        uid = await tool._find_user_by_name(ctx, "Pranish")
+        assert uid == 8
+        _mock_meeting_client.get.assert_called_once_with(
+            "/api/v1/users", auth_token="jwt-token"
+        )
+
+    @pytest.mark.asyncio
+    async def test_find_user_by_name_missing_returns_none(self, _mock_meeting_client) -> None:
+        _mock_meeting_client.get.return_value = {
+            "success": True,
+            "data": [{"id": 8, "username": "pranesh", "full_name": "Pranesh", "email": "pranesh379@gmail.com"}],
+        }
+        tool = PlannerTool()
+        uid = await tool._find_user_by_name(ExecutionContext(message="add X to meeting 5"), "Zzzunknown")
+        assert uid is None

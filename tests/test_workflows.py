@@ -168,22 +168,46 @@ class TestProjectWorkflows:
     # ── FALLBACK ────────────────────────────────────────────────────────
 
     @pytest.mark.asyncio
-    async def test_assign_member_fallback(self, _mock_backend_client) -> None:
+    async def test_assign_member_requires_name(self, _mock_backend_client) -> None:
+        result = await self._exec("Assign member", IntentType.ASSIGN_MEMBER)
+        assert "Who would you like to add" in result
+        _mock_backend_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_remove_member_requires_name(self, _mock_backend_client) -> None:
+        result = await self._exec("Remove member", IntentType.REMOVE_MEMBER)
+        assert "Who would you like to remove" in result
+        _mock_backend_client.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_assign_member_unknown_user_rejected(self, _mock_backend_client) -> None:
         _mock_backend_client.get.side_effect = [
             {"success": True, "data": [{"id": "p1", "name": "BuildTrack"}]},
             {"success": True, "data": [{"id": "u1", "full_name": "Aryan"}]},
         ]
-        result = await self._exec("Assign member", IntentType.ASSIGN_MEMBER)
+        result = await self._exec("Assign member Zzzunknown to BuildTrack", IntentType.ASSIGN_MEMBER)
+        assert "couldn't find a team member" in result
+        _mock_backend_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_assign_member_resolves_user(self, _mock_backend_client) -> None:
+        _mock_backend_client.get.side_effect = [
+            {"success": True, "data": [{"id": "p1", "name": "BuildTrack"}]},
+            {"success": True, "data": [{"id": "u1", "full_name": "Aryan"}]},
+        ]
+        _mock_backend_client.post.return_value = {"status": "success", "message": "Added."}
+        result = await self._exec("Assign member Aryan to BuildTrack", IntentType.ASSIGN_MEMBER)
         _mock_backend_client.post.assert_called_once_with("/projects/p1/members/u1", auth_token=None)
         assert "added to project" in result.lower()
 
     @pytest.mark.asyncio
-    async def test_remove_member_fallback(self, _mock_backend_client) -> None:
+    async def test_remove_member_resolves_user(self, _mock_backend_client) -> None:
         _mock_backend_client.get.side_effect = [
             {"success": True, "data": [{"id": "p1", "name": "BuildTrack"}]},
             {"success": True, "data": [{"id": "u1", "full_name": "Aryan"}]},
         ]
-        result = await self._exec("Remove member", IntentType.REMOVE_MEMBER)
+        _mock_backend_client.delete.return_value = {"status": "success", "message": "Removed."}
+        result = await self._exec("Remove member Aryan from BuildTrack", IntentType.REMOVE_MEMBER)
         _mock_backend_client.delete.assert_called_once_with("/projects/p1/members/u1", auth_token=None)
         assert "removed from project" in result.lower()
 

@@ -214,9 +214,20 @@ class TestRouting:
         self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM, _mock_backend_client
     ):
         _mock_backend_client.get.return_value = {"success": True, "data": [{"id": "t-1", "title": "Task"}]}
-        _mock_backend_client.put.return_value = {"id": "t-1", "title": "Task", "due_date": "2026-07-15", "status": "pending", "priority": "normal", "assignee": None, "project_id": None}
-        result = await orchestrator.route_request(make_context("Set a deadline for Task"))
+        _mock_backend_client.put.return_value = {"id": "t-1", "title": "Task", "due_date": "2026-08-15", "status": "pending", "priority": "normal", "assignee": None, "project_id": None}
+        result = await orchestrator.route_request(make_context("Set a deadline for Task to August 15"))
         assert "Deadline changed" in result
+        assert not gemini.was_called
+        assert not ollama.was_called
+
+    @pytest.mark.asyncio
+    async def test_deadline_without_date_asks_for_date(
+        self, orchestrator: AIOrchestrator, gemini: RecordingLLM, ollama: RecordingLLM, _mock_backend_client
+    ):
+        _mock_backend_client.get.return_value = {"success": True, "data": [{"id": "t-1", "title": "Task"}]}
+        result = await orchestrator.route_request(make_context("Set a deadline for Task"))
+        assert "date" in result.lower()
+        _mock_backend_client.put.assert_not_called()
         assert not gemini.was_called
         assert not ollama.was_called
 

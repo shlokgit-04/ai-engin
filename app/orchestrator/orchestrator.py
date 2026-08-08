@@ -121,6 +121,7 @@ class AIOrchestrator:
     async def route_request_stream(self, context: ExecutionContext) -> AsyncIterator[str]:
         category = self._classifier.classify(context.message)
         intent = self._classifier.classify_intent(context.message)
+        self._enrich_context(context, intent)
 
         if intent != IntentType.GENERAL_CHAT:
             response = await self._route_request(context, category, intent)

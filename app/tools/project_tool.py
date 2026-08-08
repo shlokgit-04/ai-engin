@@ -1,4 +1,5 @@
 import time
+import re
 
 from app.tools.base import BaseTool
 from app.orchestrator.context import ExecutionContext
@@ -14,11 +15,10 @@ from app.integrations.backend.exceptions import (
 from app.response.formatter import ResponseFormatter
 from app.executive.params import extract_project_name, extract_rename_target, extract_project_identifier
 from app.executive.validation import validate_not_empty
+from app.executive.users import match_user
 from app.executive.suggestions import get_suggestion
 from app.core.logging import logger
 
-
-_FALLBACK: dict[str, str] = {}
 
 _ERROR_MAP: dict[type, str] = {
     BackendNotFoundError: "I couldn't find that project.",
@@ -39,8 +39,6 @@ class ProjectTool(BaseTool):
 
     async def execute(self, context: ExecutionContext, intent: IntentType) -> str:
         logger.info("ProjectTool executing", intent=intent.value, input=context.message[:200])
-        if intent.value in _FALLBACK:
-            return _FALLBACK[intent.value]
         try:
             return await self._route(context, intent)
         except tuple(_ERROR_MAP) as exc:
@@ -110,6 +108,10 @@ class ProjectTool(BaseTool):
         if intent == IntentType.ASSIGN_MEMBER:
             pid = context.project_id
             member_name = context.metadata.get("member_name") or context.metadata.get("assignee", "")
+            if not member_name:
+                member_name = self._extract_member_name(context.message)
+            if not member_name:
+                return "Who would you like to add as a member? Please include the member's name."
             if not pid:
                 projects_data = await self._client.get("/projects", auth_token=context.user_auth_token)
                 projects_resp = ProjectListResponse(**projects_data)
@@ -120,37 +122,41 @@ class ProjectTool(BaseTool):
                     if p.name.lower() in msg_lower:
                         matched = p
                         break
-                if not matched and projects:
-                    matched = projects[0]
                 if not matched:
-                    return "I couldn't find a project to add a member to."
+                    return "I couldn't find which project to add the member to. Please mention the project name."
                 pid = str(matched.id)
             users_data = await self._client.get("/users", auth_token=context.user_auth_token)
             users_resp = APIResponse(**users_data)
             users = users_resp.data or []
-            matched_user = None
-            if member_name:
-                for u in users:
-                    name = (u.get("full_name") or u.get("name") or "").lower()
-                    if member_name.lower() in name or name in member_name.lower():
-                        matched_user = u
-                        break
-            if not matched_user and users:
-                matched_user = users[0]
+            matched_user = match_user(users, member_name)
             if not matched_user:
-                return "I couldn't find the user to add as a member."
+                return f"I couldn't find a team member named '{member_name}'. Please check the name and try again."
             user_id = matched_user.get("id")
-            await self._client.post(f"/projects/{pid}/members/{user_id}", auth_token=context.user_auth_token)
+            resp = await self._client.post(f"/projects/{pid}/members/{user_id}", auth_token=context.user_auth_token)
             suggestion = get_suggestion(intent.value)
             user_display = matched_user.get("full_name") or matched_user.get("name", "user")
             result = self._formatter.format(intent, {"project_name": pid, "user_name": user_display})
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("ProjectTool executed", intent=intent.value, project_id=pid, user_id=user_id, endpoint=f"POST /projects/{pid}/members/{user_id}", elapsed_ms=elapsed)
+            logger.info(
+                "ProjectTool executed",
+                intent=intent.value,
+                project_id=pid,
+                user_id=user_id,
+                member=member_name,
+                request={"user_id": user_id},
+                response_status=resp.get("status") or resp.get("success"),
+                endpoint=f"POST /projects/{pid}/members/{user_id}",
+                elapsed_ms=elapsed,
+            )
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.REMOVE_MEMBER:
             pid = context.project_id
             member_name = context.metadata.get("member_name") or context.metadata.get("assignee", "")
+            if not member_name:
+                member_name = self._extract_member_name(context.message)
+            if not member_name:
+                return "Who would you like to remove from the project? Please include the member's name."
             if not pid:
                 projects_data = await self._client.get("/projects", auth_token=context.user_auth_token)
                 projects_resp = ProjectListResponse(**projects_data)
@@ -161,38 +167,51 @@ class ProjectTool(BaseTool):
                     if p.name.lower() in msg_lower:
                         matched = p
                         break
-                if not matched and projects:
-                    matched = projects[0]
                 if not matched:
-                    return "I couldn't find a project to remove a member from."
+                    return "I couldn't find which project to remove the member from. Please mention the project name."
                 pid = str(matched.id)
             users_data = await self._client.get("/users", auth_token=context.user_auth_token)
             users_resp = APIResponse(**users_data)
             users = users_resp.data or []
-            matched_user = None
-            if member_name:
-                for u in users:
-                    name = (u.get("full_name") or u.get("name") or "").lower()
-                    if member_name.lower() in name or name in member_name.lower():
-                        matched_user = u
-                        break
-            if not matched_user and users:
-                matched_user = users[0]
+            matched_user = match_user(users, member_name)
             if not matched_user:
-                return "I couldn't find the user to remove."
+                return f"I couldn't find a team member named '{member_name}'. Please check the name and try again."
             user_id = matched_user.get("id")
-            await self._client.delete(f"/projects/{pid}/members/{user_id}", auth_token=context.user_auth_token)
+            resp = await self._client.delete(f"/projects/{pid}/members/{user_id}", auth_token=context.user_auth_token)
             suggestion = get_suggestion(intent.value)
             user_display = matched_user.get("full_name") or matched_user.get("name", "user")
             result = self._formatter.format(intent, {"project_name": pid, "user_name": user_display})
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("ProjectTool executed", intent=intent.value, project_id=pid, user_id=user_id, endpoint=f"DELETE /projects/{pid}/members/{user_id}", elapsed_ms=elapsed)
+            logger.info(
+                "ProjectTool executed",
+                intent=intent.value,
+                project_id=pid,
+                user_id=user_id,
+                member=member_name,
+                response_status=resp.get("status") or resp.get("success"),
+                endpoint=f"DELETE /projects/{pid}/members/{user_id}",
+                elapsed_ms=elapsed,
+            )
             return f"{result}\n\n{suggestion}"
 
         return "I'm not sure how to handle that request."
 
     def name(self) -> str:
         return "ProjectTool"
+
+    def _extract_member_name(self, message: str) -> str:
+        """Fallback: pull a person's name from 'add X to project' / 'assign member X' text."""
+        lower = message.lower()
+        for pattern in (
+            r"(?:add|assign|remove|invite)\s+member\s+(\S+)",
+            r"(?:add|assign|remove|invite)\s+(\S+)\s+(?:to|from)\s+(?:the\s+)?(?:project|team)",
+        ):
+            m = re.search(pattern, lower)
+            if m:
+                name = m.group(1).strip(".,!?@")
+                if name and name.lower() not in {"the", "a", "an", "to", "from", "project", "member"}:
+                    return name.capitalize()
+        return ""
 
     def description(self) -> str:
         return "Manage projects — create, delete, rename, assign members."

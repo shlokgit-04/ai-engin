@@ -14,11 +14,10 @@ from app.integrations.backend.exceptions import (
 from app.response.formatter import ResponseFormatter
 from app.executive.params import extract_task_title, extract_task_update_title, extract_task_id, extract_priority, extract_date, extract_task_identifier
 from app.executive.validation import validate_not_empty, validate_priority
+from app.executive.users import match_user
 from app.executive.suggestions import get_suggestion
 from app.core.logging import logger
 
-
-_FALLBACK: dict[str, str] = {}
 
 _ERROR_MAP: dict[type, str] = {
     BackendNotFoundError: "I couldn't find that task.",
@@ -39,8 +38,6 @@ class TaskTool(BaseTool):
 
     async def execute(self, context: ExecutionContext, intent: IntentType) -> str:
         logger.info("TaskTool executing", intent=intent.value, input=context.message[:200])
-        if intent.value in _FALLBACK:
-            return _FALLBACK[intent.value]
         try:
             return await self._route(context, intent)
         except tuple(_ERROR_MAP) as exc:
@@ -79,7 +76,17 @@ class TaskTool(BaseTool):
                 "due_date": due_date or "Not set",
             })
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, title=title, priority=priority, endpoint="POST /tasks", elapsed_ms=elapsed)
+            logger.info(
+                "TaskTool executed",
+                intent=intent.value,
+                title=title,
+                priority=priority,
+                request=task_body,
+                task_id=(resp.data.get("id") if isinstance(resp.data, dict) else None),
+                response_status=resp.success,
+                endpoint="POST /tasks",
+                elapsed_ms=elapsed,
+            )
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.COMPLETE_TASK:
@@ -91,7 +98,15 @@ class TaskTool(BaseTool):
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, task.model_dump())
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, task_id=tid, endpoint=f"PUT /tasks/{tid}", elapsed_ms=elapsed)
+            logger.info(
+                "TaskTool executed",
+                intent=intent.value,
+                task_id=tid,
+                request={"status": "completed"},
+                response_status=data.get("status") or data.get("success"),
+                endpoint=f"PUT /tasks/{tid}",
+                elapsed_ms=elapsed,
+            )
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.SHOW_TASKS:
@@ -119,25 +134,35 @@ class TaskTool(BaseTool):
                 assignee_str = self._extract_assignee(context.message)
             if not assignee_str or assignee_str == "user":
                 return "Who would you like to assign the task to? Please include a person's name."
-            assigned_to_id = None
             try:
                 users_data = await self._client.get("/users", auth_token=context.user_auth_token)
                 users_list = users_data.get("data", [])
-                for u in users_list:
-                    if assignee_str.lower() in (u.get("full_name", "") or "").lower() or assignee_str.lower() in (u.get("email", "") or "").lower():
-                        assigned_to_id = u.get("id")
-                        break
             except Exception:
-                pass
-            body = {}
-            if assigned_to_id:
-                body["assigned_to_id"] = assigned_to_id
-            data = await self._client.put(f"/tasks/{tid}", json_body=body, auth_token=context.user_auth_token)
+                users_list = []
+            matched = match_user(users_list, assignee_str)
+            assigned_to_id = matched.get("id") if matched else None
+            if not assigned_to_id:
+                return f"I couldn't find a team member named '{assignee_str}'. Please check the name and try again."
+            data = await self._client.put(
+                f"/tasks/{tid}",
+                json_body={"assigned_to_id": assigned_to_id},
+                auth_token=context.user_auth_token,
+            )
             task = Task(**(data.get("data") or data))
             suggestion = get_suggestion(intent.value)
-            result = self._formatter.format(intent, {"assignee": assignee_str or "assigned"})
+            result = self._formatter.format(intent, {"assignee": matched.get("full_name") or assignee_str})
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, task_id=tid, assignee=assignee_str, endpoint=f"PUT /tasks/{tid}", elapsed_ms=elapsed)
+            logger.info(
+                "TaskTool executed",
+                intent=intent.value,
+                task_id=tid,
+                assignee=assignee_str,
+                assigned_to_id=assigned_to_id,
+                request={"assigned_to_id": assigned_to_id},
+                response_status=data.get("status") or data.get("success"),
+                endpoint=f"PUT /tasks/{tid}",
+                elapsed_ms=elapsed,
+            )
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.UPDATE_TASK:
@@ -153,20 +178,40 @@ class TaskTool(BaseTool):
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, task.model_dump())
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, task_id=tid, title=title, endpoint=f"PUT /tasks/{tid}", elapsed_ms=elapsed)
+            logger.info(
+                "TaskTool executed",
+                intent=intent.value,
+                task_id=tid,
+                title=title,
+                request={"title": title},
+                response_status=data.get("status") or data.get("success"),
+                endpoint=f"PUT /tasks/{tid}",
+                elapsed_ms=elapsed,
+            )
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.CHANGE_DEADLINE:
             tid = await self._resolve_task_id(context)
             if not tid:
                 return "I couldn't find which task to update the deadline for. Please mention the task title."
-            due_date = extract_date(context.message) or "2026-07-15"
+            due_date = extract_date(context.message)
+            if not due_date:
+                return "I need a date for the new deadline. Please say something like 'change the deadline of {task} to 2026-08-15'."
             data = await self._client.put(f"/tasks/{tid}", json_body={"due_date": due_date}, auth_token=context.user_auth_token)
             task = Task(**(data.get("data") or data))
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, {"due_date": task.due_date or due_date})
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, task_id=tid, due_date=due_date, endpoint=f"PUT /tasks/{tid}", elapsed_ms=elapsed)
+            logger.info(
+                "TaskTool executed",
+                intent=intent.value,
+                task_id=tid,
+                due_date=due_date,
+                request={"due_date": due_date},
+                response_status=data.get("status") or data.get("success"),
+                endpoint=f"PUT /tasks/{tid}",
+                elapsed_ms=elapsed,
+            )
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.CHANGE_PRIORITY:
@@ -182,7 +227,16 @@ class TaskTool(BaseTool):
             suggestion = get_suggestion(intent.value)
             result = self._formatter.format(intent, {"priority": task.priority or priority})
             elapsed = round((time.monotonic() - start) * 1000, 2)
-            logger.info("TaskTool executed", intent=intent.value, task_id=tid, priority=priority, endpoint=f"PUT /tasks/{tid}", elapsed_ms=elapsed)
+            logger.info(
+                "TaskTool executed",
+                intent=intent.value,
+                task_id=tid,
+                priority=priority,
+                request={"priority": priority},
+                response_status=data.get("status") or data.get("success"),
+                endpoint=f"PUT /tasks/{tid}",
+                elapsed_ms=elapsed,
+            )
             return f"{result}\n\n{suggestion}"
 
         if intent == IntentType.DELETE_TASK:

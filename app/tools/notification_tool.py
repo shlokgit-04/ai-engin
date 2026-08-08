@@ -17,8 +17,6 @@ from app.executive.suggestions import get_suggestion
 from app.core.logging import logger
 
 
-_FALLBACK: dict[str, str] = {}
-
 _ERROR_MAP: dict[type, str] = {
     BackendNotFoundError: "I couldn't find that notification.",
     BackendConnectionError: "I couldn't reach the backend service.",
@@ -38,8 +36,6 @@ class NotificationTool(BaseTool):
 
     async def execute(self, context: ExecutionContext, intent: IntentType) -> str:
         logger.info("NotificationTool executing", intent=intent.value, input=context.message[:200])
-        if intent.value in _FALLBACK:
-            return _FALLBACK[intent.value]
         try:
             return await self._route(context, intent)
         except tuple(_ERROR_MAP) as exc:

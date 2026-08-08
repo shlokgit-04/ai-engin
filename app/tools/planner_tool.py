@@ -10,6 +10,7 @@ from app.orchestrator.enums import IntentType
 from app.response.formatter import ResponseFormatter
 from app.executive.params import extract_event_title, extract_date, extract_time
 from app.executive.validation import validate_not_empty
+from app.executive.users import match_user
 from app.executive.suggestions import get_suggestion
 from app.core.logging import logger
 from app.core.config import settings
@@ -286,8 +287,9 @@ class PlannerTool(BaseTool):
 
         return None
 
-    async def _resolve_user_id(self, message: str) -> int | None:
+    async def _resolve_user_id(self, ctx: ExecutionContext) -> int | None:
         """Find a user ID by name from the message."""
+        message = ctx.message
         lower = message.lower()
         words = lower.split()
 
@@ -300,7 +302,7 @@ class PlannerTool(BaseTool):
             if m:
                 name = m.group(1).strip(".,!?@")
                 if name and name not in ("a", "an", "the", "to", "from", "meeting", "event", "participant", "member"):
-                    uid = await self._find_user_by_name(name)
+                    uid = await self._find_user_by_name(ctx, name)
                     if uid:
                         return uid
 
@@ -309,22 +311,29 @@ class PlannerTool(BaseTool):
             if w in ("add", "remove", "invite") and i + 1 < len(words):
                 next_w = words[i + 1].strip(".,!?@")
                 if next_w and next_w not in ("a", "an", "the", "to", "from", "meeting", "event", "participant", "member", "user"):
-                    uid = await self._find_user_by_name(next_w)
+                    uid = await self._find_user_by_name(ctx, next_w)
                     if uid:
                         return uid
 
         return None
 
-    async def _find_user_by_name(self, name: str) -> int | None:
+    def _match_user(self, users: list[dict], name: str) -> dict | None:
+        return match_user(users, name)
+
+    async def _find_user_by_name(self, ctx: ExecutionContext, name: str) -> int | None:
         """Search users by name and return matching user ID."""
         data = await self._client.get("/api/v1/users", auth_token=ctx.user_auth_token)
         users = data.get("data", [])
-        lower_name = name.lower()
-        for u in users:
-            if (lower_name in u.get("full_name", "").lower()
-                    or lower_name in u.get("email", "").lower()
-                    or lower_name in u.get("username", "").lower()):
-                return u["id"]
+        matched = self._match_user(users, name)
+        if matched is not None:
+            logger.info(
+                "PlannerTool user resolved",
+                query=name,
+                user_id=matched.get("id"),
+                full_name=matched.get("full_name"),
+            )
+            return matched["id"]
+        logger.info("PlannerTool user not found", query=name, user_count=len(users))
         return None
 
     def _extract_mom_text(self, message: str) -> str:
@@ -398,6 +407,13 @@ class PlannerTool(BaseTool):
             "time": event_time or "TBD",
             "title": title,
         })
+        logger.info(
+            "PlannerTool meeting created",
+            title=title,
+            meeting_id=meeting.get("id"),
+            request=body,
+            response_status=data.get("status") or data.get("success"),
+        )
         return f"{result}\n\n{suggestion}" if suggestion else result
 
     def _clean_title(self, raw: str) -> str:
@@ -500,9 +516,9 @@ class PlannerTool(BaseTool):
         mid = await self._resolve_meeting_id(ctx.message)
         if mid is None:
             return "Which meeting? Please specify the meeting name or ID."
-        uid = await self._resolve_user_id(ctx.message)
+        uid = await self._resolve_user_id(ctx)
         if uid is None:
-            return "Who would you like to add? Please specify a participant name."
+            return "I couldn't identify who to add. Please include a team member's name (e.g. 'add Nebisha to meeting 5')."
         await self._client.post(f"/api/v1/meetings/{mid}/participants", params={"user_id": uid}, auth_token=ctx.user_auth_token)
         return f"Participant (user ID: {uid}) added to meeting (ID: {mid})."
 
@@ -510,9 +526,9 @@ class PlannerTool(BaseTool):
         mid = await self._resolve_meeting_id(ctx.message)
         if mid is None:
             return "Which meeting? Please specify the meeting name or ID."
-        uid = await self._resolve_user_id(ctx.message)
+        uid = await self._resolve_user_id(ctx)
         if uid is None:
-            return "Who would you like to remove? Please specify a participant name."
+            return "I couldn't identify who to remove. Please include a team member's name (e.g. 'remove Aryan from meeting 5')."
         await self._client.post(f"/api/v1/meetings/{mid}/participants/remove", params={"user_id": uid}, auth_token=ctx.user_auth_token)
         return f"Participant (user ID: {uid}) removed from meeting (ID: {mid})."
 
@@ -690,7 +706,15 @@ class PlannerTool(BaseTool):
             "time": event_time or "TBD",
             "id": meeting.get("id"),
         })
-        logger.info("PlannerTool reminder set", title=title, date=event_date, time=event_time, meeting_id=meeting.get("id"))
+        logger.info(
+            "PlannerTool reminder set",
+            title=title,
+            date=event_date,
+            time=event_time,
+            reminder_id=meeting.get("id"),
+            request=body,
+            response_status=data.get("status") or data.get("success"),
+        )
         return f"{result}\n\n{suggestion}" if suggestion else result
 
     def name(self) -> str:
