@@ -205,6 +205,7 @@ class ProjectTool(BaseTool):
         for pattern in (
             r"(?:add|assign|remove|invite)\s+member\s+(\S+)",
             r"(?:add|assign|remove|invite)\s+(\S+)\s+(?:to|from)\s+(?:the\s+)?(?:project|team)",
+            r"(?:add|assign|remove|invite)\s+(\S+)\s+as\s+(?:a\s+)?member",
         ):
             m = re.search(pattern, lower)
             if m:

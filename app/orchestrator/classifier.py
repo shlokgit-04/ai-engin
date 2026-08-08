@@ -74,7 +74,14 @@ class Classifier:
             return IntentType.SHOW_PROJECT_STATUS
         if _triggered(lower, ["assign member", "add member to project", "add member", "add a member", "add members", "assign a member"]):
             return IntentType.ASSIGN_MEMBER
-        if _triggered(lower, ["remove member", "remove from project"]):
+        if _regex_match(lower, [
+            r"\b(?:add|assign)\b[^.]*\b(?:to|as (?:a )?member of)\b[^.]*\bproject\b",
+            r"\b(?:add|assign)\b[^.]*\bmember\b[^.]*\bproject\b",
+        ]):
+            return IntentType.ASSIGN_MEMBER
+        if _triggered(lower, ["remove member", "remove from project", "remove member from project"]):
+            return IntentType.REMOVE_MEMBER
+        if _regex_match(lower, [r"\bremove\b[^.]*\bfrom\b[^.]*\bproject\b"]):
             return IntentType.REMOVE_MEMBER
 
         # --- Task intents ---
@@ -153,9 +160,15 @@ class Classifier:
             return IntentType.RESCHEDULE_MEETING
         if _triggered(lower, ["rename meeting"]):
             return IntentType.RENAME_MEETING
-        if _regex_match(lower, [r"\badd\b.*\bto\b"]) and not _regex_match(lower, [r"\badd (meeting|task|project|member|member to project)\b"]):
+        if _regex_match(lower, [r"\badd\b.*\bto\b"]) and not _regex_match(lower, [
+            r"\badd (meeting|task|project|member|member to project)\b",
+            r"\badd\b.*\bto\b.*\bproject\b",
+        ]):
             return IntentType.ADD_PARTICIPANT
-        if _regex_match(lower, [r"\bremove\b.*\bfrom\b"]) and not _regex_match(lower, [r"\bremove (meeting|task|project|member|member from project)\b"]):
+        if _regex_match(lower, [r"\bremove\b.*\bfrom\b"]) and not _regex_match(lower, [
+            r"\bremove (meeting|task|project|member|member from project)\b",
+            r"\bremove\b.*\bfrom\b.*\bproject\b",
+        ]):
             return IntentType.REMOVE_PARTICIPANT
         if _triggered(lower, ["meeting details", "show meeting", "show participants", "meeting participants", "who's in meeting", "who is in meeting"]):
             return IntentType.SHOW_MEETING_DETAIL

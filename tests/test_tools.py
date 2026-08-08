@@ -557,6 +557,16 @@ class TestIntentClassifier:
     def test_assign_member(self):
         assert self.classifier.classify_intent("Assign member to project") == IntentType.ASSIGN_MEMBER
 
+    def test_assign_member_add_to_project(self):
+        assert self.classifier.classify_intent("Add Nebisha to project GMDI") == IntentType.ASSIGN_MEMBER
+
+    def test_assign_member_as_member_of(self):
+        assert self.classifier.classify_intent("Add Nebisha as a member of the GMDI project") == IntentType.ASSIGN_MEMBER
+
+    def test_remove_member_from_project(self):
+        assert self.classifier.classify_intent("Remove Nebisha from project GMDI") == IntentType.REMOVE_MEMBER
+        assert self.classifier.classify_intent("Remove member Nebisha from project GMDI") == IntentType.REMOVE_MEMBER
+
     # --- Task intents ---
     def test_create_task(self):
         assert self.classifier.classify_intent("Create a task") == IntentType.CREATE_TASK
